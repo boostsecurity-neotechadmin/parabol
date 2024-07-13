@@ -1,30 +1,33 @@
+import {TableChart} from '@mui/icons-material'
+import PictureAsPdf from '@mui/icons-material/PictureAsPdf'
 import graphql from 'babel-plugin-relay/macro'
+import {SummarySheet_meeting$key} from 'parabol-client/__generated__/SummarySheet_meeting.graphql'
 import CreateAccountSection from 'parabol-client/modules/demo/components/CreateAccountSection'
 import {sheetShadow} from 'parabol-client/styles/elevation'
 import {ACTION} from 'parabol-client/utils/constants'
-import {SummarySheet_meeting$key} from 'parabol-client/__generated__/SummarySheet_meeting.graphql'
-import React from 'react'
+import React, {useRef} from 'react'
 import {useFragment} from 'react-relay'
+import {Link} from 'react-router-dom'
+import useAtmosphere from '../../../../../hooks/useAtmosphere'
+import {PALETTE} from '../../../../../styles/paletteV3'
 import {CorsOptions} from '../../../../../types/cors'
+import SendClientSideEvent from '../../../../../utils/SendClientSideEvent'
+import lazyPreload from '../../../../../utils/lazyPreload'
 import ExportToCSV from '../ExportToCSV'
+import EmailBorderBottom from '../MeetingSummaryEmail/EmailBorderBottom'
 import ContactUsFooter from './ContactUsFooter'
 import LogoFooter from './LogoFooter'
-import MeetingMembersWithoutTasks from './MeetingMembersWithoutTasks'
 import MeetingMembersWithTasks from './MeetingMembersWithTasks'
+import MeetingMembersWithoutTasks from './MeetingMembersWithoutTasks'
 import {MeetingSummaryReferrer} from './MeetingSummaryEmail'
 import QuickStats from './QuickStats'
-import TeamHealthSummary from './TeamHealthSummary'
 import RetroTopics from './RetroTopics'
 import SummaryHeader from './SummaryHeader'
 import SummaryPokerStories from './SummaryPokerStories'
 import SummarySheetCTA from './SummarySheetCTA'
+import TeamHealthSummary from './TeamHealthSummary'
 import TeamPromptResponseSummary from './TeamPromptResponseSummary'
 import WholeMeetingSummary from './WholeMeetingSummary'
-import lazyPreload from '../../../../../utils/lazyPreload'
-import EmailBorderBottom from '../MeetingSummaryEmail/EmailBorderBottom'
-import {PALETTE} from '../../../../../styles/paletteV3'
-import {TableChart} from '@mui/icons-material'
-import {Link} from 'react-router-dom'
 
 const ExportAllTasks = lazyPreload(() => import('./ExportAllTasks'))
 
@@ -36,6 +39,7 @@ interface Props {
   referrer: MeetingSummaryReferrer
   referrerUrl?: string
   teamDashUrl: string
+  meetingUrl: string
   urlAction?: 'csv'
   corsOptions: CorsOptions
 }
@@ -52,9 +56,11 @@ const SummarySheet = (props: Props) => {
     meeting: meetingRef,
     referrer,
     teamDashUrl,
+    meetingUrl,
     appOrigin,
     corsOptions
   } = props
+  const atmosphere = useAtmosphere()
   const meeting = useFragment(
     graphql`
       fragment SummarySheet_meeting on NewMeeting {
@@ -84,15 +90,89 @@ const SummarySheet = (props: Props) => {
     `,
     meetingRef
   )
-  const {id: meetingId, meetingType, taskCount} = meeting
+  const {id: meetingId, meetingType, taskCount, name} = meeting
   const isDemo = !!props.isDemo
+  const sheetRef = useRef<HTMLTableElement | null>(null)
+
+  const downloadPDF = () => {
+    SendClientSideEvent(atmosphere, 'Download PDF Clicked', {meetingId})
+
+    const printStyles = `
+      <style>
+        @media print {
+          body {
+            margin: 0;
+            padding: 0;
+          }
+          table {
+            page-break-after: auto;
+            margin: 0 auto;
+            width: 100%;
+            max-width: 800px;
+          }
+          tr, td {
+            page-break-inside: avoid;
+            page-break-after: auto;
+          }
+          thead {
+            display: table-header-group;
+          }
+          tfoot {
+            display: table-footer-group;
+          }
+          .print\\:hidden {
+            display: none !important;
+          }
+          .print\\:w-[210mm] {
+            width: 100%;
+          }
+          .text-center {
+            text-align: center;
+          }
+        }
+      </style>
+    `
+
+    const printWindow = window.open('', '_blank')
+    if (!printWindow) return
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Parabol: ${name} Summary</title>
+        </head>
+        <body>
+          ${printStyles}
+          ${sheetRef.current?.outerHTML}
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.focus()
+    printWindow.print()
+    printWindow.onafterprint = () => {
+      printWindow.close()
+    }
+  }
 
   return (
-    <table width='100%' height='100%' align='center' bgcolor='#FFFFFF' style={sheetStyle}>
+    <table
+      className='print:w-[210mm]'
+      width='100%'
+      height='100%'
+      align='center'
+      bgcolor='#FFFFFF'
+      ref={sheetRef}
+      style={sheetStyle}
+    >
       <tbody>
         <tr>
           <td>
-            <SummaryHeader meeting={meeting} corsOptions={corsOptions} />
+            <SummaryHeader
+              meeting={meeting}
+              corsOptions={corsOptions}
+              teamDashUrl={teamDashUrl}
+              meetingUrl={meetingUrl}
+            />
             <QuickStats meeting={meeting} />
             <TeamHealthSummary meeting={meeting} />
           </td>
@@ -101,34 +181,55 @@ const SummarySheet = (props: Props) => {
         {referrer === 'meeting'
           ? (meetingType !== 'teamPrompt' || (!!taskCount && taskCount > 0)) && (
               <>
-                <tr>
+                <tr className='print:hidden'>
                   <td>
                     <table width='90%' align='center' className='mt-8 rounded-lg bg-slate-200 py-4'>
                       <tbody>
                         <tr>
                           <td align='center' width='100%'>
-                            <div className='flex justify-center gap-4'>
+                            <div className='mb-2 flex justify-center gap-4'>
                               {!!taskCount && taskCount > 0 && (
                                 <ExportAllTasks meetingRef={meeting} />
                               )}
-                              {meetingType !== 'teamPrompt' && (
-                                <Link
-                                  to={emailCSVUrl}
-                                  className={
-                                    'flex cursor-pointer items-center gap-2 rounded-full border border-solid border-slate-400 bg-white px-5 py-2 text-center font-sans text-sm font-semibold hover:bg-slate-100'
-                                  }
-                                >
-                                  <TableChart
-                                    style={{
-                                      width: '14px',
-                                      height: '14px',
-                                      color: PALETTE.SLATE_600
-                                    }}
-                                  />
-                                  Export to CSV
-                                </Link>
-                              )}
                             </div>
+                            {meetingType !== 'teamPrompt' && (
+                              <tr>
+                                <td align='center' width='100%'>
+                                  <div className='flex justify-center gap-4'>
+                                    <Link
+                                      to={emailCSVUrl}
+                                      className={
+                                        'flex cursor-pointer items-center gap-2 rounded-full border border-solid border-slate-400 bg-white px-5 py-2 text-center font-sans text-sm font-semibold hover:bg-slate-100'
+                                      }
+                                    >
+                                      <TableChart
+                                        style={{
+                                          width: '14px',
+                                          height: '14px',
+                                          color: PALETTE.SLATE_600
+                                        }}
+                                      />
+                                      Export to CSV
+                                    </Link>
+                                    <button
+                                      onClick={downloadPDF}
+                                      className={
+                                        'flex cursor-pointer items-center gap-2 rounded-full border border-solid border-slate-400 bg-white px-5 py-2 text-center font-sans text-sm font-semibold hover:bg-slate-100'
+                                      }
+                                    >
+                                      <PictureAsPdf
+                                        style={{
+                                          width: '14px',
+                                          height: '14px',
+                                          color: PALETTE.SLATE_600
+                                        }}
+                                      />
+                                      Download PDF
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
                           </td>
                         </tr>
                       </tbody>
@@ -188,7 +289,7 @@ const SummarySheet = (props: Props) => {
           prompt={`How’d your meeting go?`}
           tagline='We’re eager for your feedback!'
         />
-        <LogoFooter corsOptions={corsOptions} />
+        <LogoFooter corsOptions={corsOptions} appOrigin={appOrigin} />
       </tbody>
     </table>
   )

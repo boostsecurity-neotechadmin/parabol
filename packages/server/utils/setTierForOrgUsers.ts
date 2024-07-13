@@ -8,20 +8,31 @@
  * will be created.
  */
 import getRethink from '../database/rethinkDriver'
-import {TierEnum} from '../database/types/Invoice'
+import getKysely from '../postgres/getKysely'
 
 const setTierForOrgUsers = async (orgId: string) => {
   const r = await getRethink()
+  const pg = getKysely()
+  const organization = await getKysely()
+    .selectFrom('Organization')
+    .select(['trialStartDate', 'tier'])
+    .where('id', '=', orgId)
+    .executeTakeFirstOrThrow()
+  const {tier, trialStartDate} = organization
+  await pg
+    .updateTable('OrganizationUser')
+    .set({tier, trialStartDate})
+    .where('orgId', '=', orgId)
+    .where('removedAt', 'is', null)
+    .execute()
   await r
     .table('OrganizationUser')
     .getAll(orgId, {index: 'orgId'})
     .filter({removedAt: null})
-    .update(
-      {
-        tier: r.table('Organization').get(orgId).getField('tier') as unknown as TierEnum
-      },
-      {nonAtomic: true}
-    )
+    .update({
+      tier,
+      trialStartDate
+    })
     .run()
 }
 

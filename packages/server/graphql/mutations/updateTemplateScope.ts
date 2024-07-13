@@ -10,12 +10,12 @@ import TemplateDimension from '../../database/types/TemplateDimension'
 import insertMeetingTemplate from '../../postgres/queries/insertMeetingTemplate'
 import removeMeetingTemplate from '../../postgres/queries/removeMeetingTemplate'
 import updateMeetingTemplateScope from '../../postgres/queries/updateMeetingTemplateScope'
+import {analytics} from '../../utils/analytics/analytics'
 import {getUserId, isTeamMember} from '../../utils/authorization'
 import publish from '../../utils/publish'
 import {GQLContext} from '../graphql'
 import SharingScopeEnum, {SharingScopeEnumType} from '../types/SharingScopeEnum'
 import UpdateTemplateScopePayload from '../types/UpdateTemplateScopePayload'
-import sendTemplateEventToSegment from './helpers/sendTemplateEventToSegment'
 
 const updateTemplateScope = {
   type: new GraphQLNonNull(UpdateTemplateScopePayload),
@@ -41,7 +41,10 @@ const updateTemplateScope = {
     const subOptions = {mutatorId, operationId}
     const viewerId = getUserId(authToken)
     //AUTH
-    const template = await dataLoader.get('meetingTemplates').load(templateId)
+    const [template, viewer] = await Promise.all([
+      dataLoader.get('meetingTemplates').load(templateId),
+      dataLoader.get('users').loadNonNull(viewerId)
+    ])
     if (!template || !template.isActive) {
       return {error: {message: `Template not found`}}
     }
@@ -143,7 +146,7 @@ const updateTemplateScope = {
     }
     const data = {templateId, teamId, clonedTemplateId}
 
-    sendTemplateEventToSegment(viewerId, {...template, scope: newScope}, 'Template Shared')
+    analytics.templateMetrics(viewer, {...template, scope: newScope}, 'Template Shared')
     // technically, this affects every connected client (public), or every team in the org (organization), but those are edge cases
     publish(SubscriptionChannel.ORGANIZATION, orgId, 'UpdateTemplateScopeSuccess', data, subOptions)
     return data

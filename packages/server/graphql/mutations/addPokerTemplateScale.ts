@@ -4,12 +4,12 @@ import dndNoise from 'parabol-client/utils/dndNoise'
 import getRethink from '../../database/rethinkDriver'
 import {RDatum} from '../../database/stricterR'
 import TemplateScale from '../../database/types/TemplateScale'
+import {analytics} from '../../utils/analytics/analytics'
 import {getUserId, isTeamMember} from '../../utils/authorization'
 import publish from '../../utils/publish'
 import standardError from '../../utils/standardError'
 import {GQLContext} from '../graphql'
 import AddPokerTemplateScalePayload from '../types/AddPokerTemplateScalePayload'
-import sendScaleEventToSegment from './helpers/sendScaleEventToSegment'
 
 const addPokerTemplateScale = {
   description: 'Add a new scale for the poker template',
@@ -38,11 +38,14 @@ const addPokerTemplateScale = {
     }
 
     // VALIDATION
-    const activeScales = await r
-      .table('TemplateScale')
-      .getAll(teamId, {index: 'teamId'})
-      .filter((row: RDatum) => row('removedAt').default(null).eq(null))
-      .run()
+    const [activeScales, viewer] = await Promise.all([
+      r
+        .table('TemplateScale')
+        .getAll(teamId, {index: 'teamId'})
+        .filter((row: RDatum) => row('removedAt').default(null).eq(null))
+        .run(),
+      dataLoader.get('users').loadNonNull(viewerId)
+    ])
     if (activeScales.length >= Threshold.MAX_POKER_TEMPLATE_SCALES) {
       return standardError(new Error('Too many scales'), {userId: viewerId})
     }
@@ -91,7 +94,7 @@ const addPokerTemplateScale = {
 
     const scaleId = newScale.id
     const data = {scaleId}
-    sendScaleEventToSegment(viewerId, newScale, parentScaleId ? 'Scale Cloned' : 'Scale Created')
+    analytics.scaleMetrics(viewer, newScale, parentScaleId ? 'Scale Cloned' : 'Scale Created')
     publish(SubscriptionChannel.TEAM, teamId, 'AddPokerTemplateScalePayload', data, subOptions)
     return data
   }

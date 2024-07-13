@@ -2,19 +2,24 @@ import styled from '@emotion/styled'
 import graphql from 'babel-plugin-relay/macro'
 import React from 'react'
 import {useFragment} from 'react-relay'
-import {useLocation, useRouteMatch} from 'react-router'
+import {useRouteMatch} from 'react-router'
+import {DashSidebar_viewer$key} from '../../__generated__/DashSidebar_viewer.graphql'
 import {PALETTE} from '../../styles/paletteV3'
 import {NavSidebar} from '../../types/constEnums'
-import {BILLING_PAGE, MEMBERS_PAGE, ORG_SETTINGS_PAGE, TEAMS_PAGE} from '../../utils/constants'
-import {DashSidebar_viewer$key} from '../../__generated__/DashSidebar_viewer.graphql'
+import {
+  AUTHENTICATION_PAGE,
+  BILLING_PAGE,
+  MEMBERS_PAGE,
+  ORG_SETTINGS_PAGE,
+  TEAMS_PAGE
+} from '../../utils/constants'
 import DashNavList from '../DashNavList/DashNavList'
 import SideBarStartMeetingButton from '../SideBarStartMeetingButton'
 import LeftDashNavItem from './LeftDashNavItem'
-import getTeamIdFromPathname from '../../utils/getTeamIdFromPathname'
 
 const Nav = styled('nav')<{isOpen: boolean}>(({isOpen}) => ({
-  // 78px is total height of 'Add meeting' block
-  height: 'calc(100% - 78px)',
+  // 70px is total height of 'Add meeting' block
+  height: 'calc(100% - 70px)',
   userSelect: 'none',
   transition: `all 300ms`,
   transform: isOpen ? undefined : `translateX(-${NavSidebar.WIDTH}px)`,
@@ -33,13 +38,9 @@ const NavMain = styled('div')({
   overflowY: 'auto'
 })
 
-const DashHR = styled('div')({
-  borderBottom: `solid ${PALETTE.SLATE_300} 1px`,
-  width: '100%'
-})
-
 const NavItem = styled(LeftDashNavItem)({
-  paddingLeft: 16
+  borderRadius: 44,
+  paddingLeft: 15
 })
 
 const NavList = styled(DashNavList)({
@@ -56,12 +57,11 @@ const Wrapper = styled('div')({
 })
 
 const OrgName = styled('div')({
-  paddingTop: 8,
+  color: PALETTE.SLATE_600,
   fontWeight: 600,
   fontSize: 12,
-  lineHeight: '24px',
-  color: PALETTE.SLATE_500,
-  paddingLeft: 16
+  lineHeight: '16px',
+  padding: '8px 16px'
 })
 
 interface Props {
@@ -77,99 +77,84 @@ const DashSidebar = (props: Props) => {
     graphql`
       fragment DashSidebar_viewer on User {
         ...StandardHub_viewer
-        ...DashNavList_viewer
-        featureFlags {
-          checkoutFlow
-          retrosInDisguise
-        }
         organizations {
+          ...DashNavList_organization
           id
           name
-          isBillingLeader
         }
       }
     `,
     viewerRef
   )
 
-  const location = useLocation()
-
   if (!viewer) return null
-  const {featureFlags, organizations} = viewer
-  const showOrgSidebar = featureFlags.checkoutFlow && match
+  const {organizations} = viewer
 
-  if (showOrgSidebar) {
+  if (match) {
     const {orgId: orgIdFromParams} = match.params
     const currentOrg = organizations.find((org) => org.id === orgIdFromParams)
-    const {id: orgId, name, isBillingLeader} = currentOrg ?? {}
+    const {id: orgId, name} = currentOrg ?? {}
     return (
       <Wrapper>
-        <SideBarStartMeetingButton isOpen={isOpen} hasRid={featureFlags.retrosInDisguise} />
+        <SideBarStartMeetingButton isOpen={isOpen} />
         <Nav isOpen={isOpen}>
           <Contents>
-            <NavItemsWrap>
-              <NavItem icon={'arrowBack'} href={'/me/organizations'} label={'Organizations'} />
-              <OrgName>{name}</OrgName>
-              <NavItem
-                icon={'creditScore'}
-                href={`/me/organizations/${orgId}/${BILLING_PAGE}`}
-                label={'Plans & Billing'}
-              />
-              {isBillingLeader && (
+            <div className='px-3'>
+              <NavItemsWrap>
+                <NavItem
+                  icon={'arrowBack'}
+                  href={'/me/organizations'}
+                  label={'Organizations'}
+                  exact
+                />
+                <OrgName>{name}</OrgName>
+                <NavItem
+                  icon={'creditScore'}
+                  href={`/me/organizations/${orgId}/${BILLING_PAGE}`}
+                  label={'Plans & Billing'}
+                />
                 <NavItem
                   icon={'groups'}
                   href={`/me/organizations/${orgId}/${TEAMS_PAGE}`}
                   label={'Teams'}
                 />
-              )}
-              <NavItem
-                icon={'group'}
-                href={`/me/organizations/${orgId}/${MEMBERS_PAGE}`}
-                label={'Members'}
-              />
-              <NavItem
-                icon={'work'}
-                href={`/me/organizations/${orgId}/${ORG_SETTINGS_PAGE}`}
-                label={'Organization Settings'}
-              />
-            </NavItemsWrap>
+                <NavItem
+                  icon={'group'}
+                  href={`/me/organizations/${orgId}/${MEMBERS_PAGE}`}
+                  label={'Members'}
+                />
+                <NavItem
+                  icon={'work'}
+                  href={`/me/organizations/${orgId}/${ORG_SETTINGS_PAGE}`}
+                  label={'Organization Settings'}
+                />
+                <NavItem
+                  icon={'key'}
+                  href={`/me/organizations/${orgId}/${AUTHENTICATION_PAGE}`}
+                  label={'Authentication'}
+                />
+              </NavItemsWrap>
+            </div>
           </Contents>
         </Nav>
       </Wrapper>
     )
   }
 
-  const teamId = getTeamIdFromPathname()
-
   return (
     <Wrapper>
-      <SideBarStartMeetingButton isOpen={isOpen} hasRid={featureFlags.retrosInDisguise} />
+      <SideBarStartMeetingButton isOpen={isOpen} />
       <Nav isOpen={isOpen}>
         <Contents>
-          <NavItemsWrap>
+          <div className='border-x border-solid border-[transparent] px-4'>
             <NavItem icon={'forum'} href={'/meetings'} label={'Meetings'} />
-            <NavItem icon={'timeline'} href={'/me'} label={'History'} />
+            <NavItem icon={'timeline'} href={'/me'} label={'History'} exact />
             <NavItem icon={'playlist_add_check'} href={'/me/tasks'} label={'Tasks'} />
-          </NavItemsWrap>
-          <DashHR />
-          <NavMain>
-            <NavList viewer={viewer} />
-          </NavMain>
-          <DashHR />
-          <NavItemsWrap>
             <NavItem icon={'add'} href={'/newteam/1'} label={'Add a Team'} />
-          </NavItemsWrap>
-          <DashHR />
-          <NavItemsWrap>
-            {featureFlags.retrosInDisguise && (
-              <NavItem
-                icon={'magic'}
-                href={`/new-meeting/${teamId}`}
-                navState={{backgroundLocation: location}}
-                label={'Add meeting (legacy)'}
-              />
-            )}
-          </NavItemsWrap>
+          </div>
+          <NavMain>
+            <NavList organizationsRef={organizations} />
+          </NavMain>
         </Contents>
       </Nav>
     </Wrapper>

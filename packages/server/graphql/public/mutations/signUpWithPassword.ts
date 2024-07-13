@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import {AuthenticationError, Security} from 'parabol-client/types/constEnums'
+import {URLSearchParams} from 'url'
 import getRethink from '../../../database/rethinkDriver'
 import {RValue} from '../../../database/stricterR'
 import createEmailVerification from '../../../email/createEmailVerification'
@@ -13,7 +14,7 @@ import {MutationResolvers} from '../resolverTypes'
 
 const signUpWithPassword: MutationResolvers['signUpWithPassword'] = async (
   _source,
-  {invitationToken, password, segmentId, email: denormEmail, params},
+  {invitationToken, password, pseudoId, email: denormEmail, params},
   context
 ) => {
   const email = denormEmail.toLowerCase().trim()
@@ -35,6 +36,8 @@ const signUpWithPassword: MutationResolvers['signUpWithPassword'] = async (
   const {error} = loginAttempt
   if (error === AuthenticationError.USER_EXISTS_GOOGLE) {
     return {error: {message: 'Try logging in with Google'}}
+  } else if (error === AuthenticationError.USER_EXISTS_MICROSOFT) {
+    return {error: {message: 'Try logging in with Microsoft'}}
   } else if (error === AuthenticationError.INVALID_PASSWORD) {
     return {error: {message: 'User already exists'}}
   }
@@ -56,12 +59,18 @@ const signUpWithPassword: MutationResolvers['signUpWithPassword'] = async (
     if (existingVerification) {
       return {error: {message: 'Verification email already sent'}}
     }
-    return createEmailVerification({invitationToken, password, segmentId, email})
+    const redirectTo = new URLSearchParams(params).get('redirectTo')
+    return createEmailVerification({invitationToken, password, pseudoId, email, redirectTo})
   }
   const hashedPassword = await bcrypt.hash(password, Security.SALT_ROUNDS)
-  const newUser = createNewLocalUser({email, hashedPassword, isEmailVerified: false, segmentId})
+  const newUser = await createNewLocalUser({
+    email,
+    hashedPassword,
+    isEmailVerified: false,
+    pseudoId
+  })
   // MUTATIVE
-  context.authToken = await bootstrapNewUser(newUser, isOrganic, params)
+  context.authToken = await bootstrapNewUser(newUser, isOrganic, dataLoader)
   return {
     userId: newUser.id,
     authToken: encodeAuthToken(context.authToken),

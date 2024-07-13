@@ -9,6 +9,7 @@ export type NotificationEnum =
   | 'PROMOTE_TO_BILLING_LEADER'
   | 'RESPONSE_MENTIONED'
   | 'RESPONSE_REPLIED'
+  | 'MENTIONED'
   | 'TASK_INVOLVES'
   | 'TEAM_ARCHIVED'
   | 'TEAM_INVITATION'
@@ -26,7 +27,7 @@ export default abstract class Notification {
   id = generateUID()
   status: NotificationStatusEnumType = 'UNREAD'
   createdAt = new Date()
-  type: NotificationEnum
+  readonly type: NotificationEnum
   userId: string
 
   constructor({type, userId}: NotificationInput) {

@@ -2,7 +2,7 @@ import GQLTrebuchetClient, {
   GQLHTTPClient,
   OperationPayload
 } from '@mattkrick/graphql-trebuchet-client'
-import getTrebuchet, {SocketTrebuchet, SSETrebuchet} from '@mattkrick/trebuchet-client'
+import getTrebuchet, {SSETrebuchet, SocketTrebuchet} from '@mattkrick/trebuchet-client'
 import EventEmitter from 'eventemitter3'
 import jwtDecode from 'jwt-decode'
 import {Disposable} from 'react-relay'
@@ -12,7 +12,6 @@ import {
   ConcreteRequest,
   Environment,
   FetchFunction,
-  fetchQuery,
   GraphQLResponse,
   GraphQLTaggedNode,
   Network,
@@ -25,17 +24,18 @@ import {
   Store,
   SubscribeFunction,
   UploadableMap,
-  Variables
+  Variables,
+  fetchQuery
 } from 'relay-runtime'
 import {Sink} from 'relay-runtime/lib/network/RelayObservable'
 import StrictEventEmitter from 'strict-event-emitter-types'
+import {InviteToTeamMutation_notification$data} from './__generated__/InviteToTeamMutation_notification.graphql'
 import {Snack, SnackbarRemoveFn} from './components/Snackbar'
 import handleInvalidatedSession from './hooks/handleInvalidatedSession'
 import {AuthToken} from './types/AuthToken'
 import {LocalStorageKey, TrebuchetCloseReason} from './types/constEnums'
 import handlerProvider from './utils/relay/handlerProvider'
 import sleep from './utils/sleep'
-import {InviteToTeamMutation_notification$data} from './__generated__/InviteToTeamMutation_notification.graphql'
 ;(RelayFeatureFlags as any).ENABLE_RELAY_CONTAINERS_SUSPENSE = false
 ;(RelayFeatureFlags as any).ENABLE_PRECISE_TYPE_REFINEMENT = true
 
@@ -110,8 +110,6 @@ export default class Atmosphere extends Environment {
   upgradeTransportPromise: Promise<void> | null = null
   // it's only null before login, so it's just a little white lie
   viewerId: string = null!
-  /** @deprecated */
-  userId: string | null = null
   tabCheckChannel?: BroadcastChannel
   constructor() {
     super({
@@ -270,6 +268,9 @@ export default class Atmosphere extends Environment {
           'Cannot establish connection. Behind a firewall? Reach out for support: love@parabol.co'
       })
       console.error('Cannot connect!')
+      // this may be reached if the auth token was deemed invalid by the server
+      this.setAuthToken(null)
+      window.location.href = '/'
       return
     }
     this.transport = new GQLTrebuchetClient(trebuchet)
@@ -411,8 +412,6 @@ export default class Atmosphere extends Environment {
     } else {
       this.viewerId = viewerId!
       window.localStorage.setItem(LocalStorageKey.APP_TOKEN_KEY, authToken)
-      // deprecated! will be removed soon
-      this.userId = viewerId
     }
   }
 
@@ -516,6 +515,5 @@ export default class Atmosphere extends Environment {
     this.querySubscriptions = []
     this.subscriptions = {}
     this.viewerId = null!
-    this.userId = null // DEPRECATED
   }
 }

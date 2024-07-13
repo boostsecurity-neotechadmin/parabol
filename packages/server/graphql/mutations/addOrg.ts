@@ -4,10 +4,10 @@ import toTeamMemberId from 'parabol-client/utils/relay/toTeamMemberId'
 import AuthToken from '../../database/types/AuthToken'
 import generateUID from '../../generateUID'
 import removeSuggestedAction from '../../safeMutations/removeSuggestedAction'
+import {analytics} from '../../utils/analytics/analytics'
 import {getUserId} from '../../utils/authorization'
 import encodeAuthToken from '../../utils/encodeAuthToken'
 import publish from '../../utils/publish'
-import segmentIo from '../../utils/segmentIo'
 import standardError from '../../utils/standardError'
 import rateLimit from '../rateLimit'
 import AddOrgPayload from '../types/AddOrgPayload'
@@ -52,26 +52,26 @@ export default {
     if (Object.keys(errors).length) {
       return standardError(new Error('Failed input validation'), {userId: viewerId})
     }
-    const user = await dataLoader.get('users').load(viewerId)
-    if (!user) {
+    const viewer = await dataLoader.get('users').load(viewerId)
+    if (!viewer) {
       return standardError(new Error('Authorization error'), {userId: viewerId})
     }
 
     // RESOLUTION
     const orgId = generateUID()
     const teamId = generateUID()
-    const {email} = user
-    await createNewOrg(orgId, orgName, viewerId, email)
-    await createTeamAndLeader(user, {id: teamId, orgId, isOnboardTeam: false, ...newTeam})
+    const {email} = viewer
+    await createNewOrg(orgId, orgName, viewerId, email, dataLoader)
+    await createTeamAndLeader(
+      viewer,
+      {id: teamId, orgId, isOnboardTeam: false, ...newTeam},
+      dataLoader
+    )
 
     const {tms} = authToken
     // MUTATIVE
     tms.push(teamId)
-    segmentIo.track({
-      userId: viewerId,
-      event: 'New Org',
-      properties: {orgId, teamId, fromSignup: false}
-    })
+    analytics.newOrg(viewer, orgId, teamId, false)
     publish(SubscriptionChannel.NOTIFICATION, viewerId, 'AuthTokenPayload', {tms})
 
     const teamMemberId = toTeamMemberId(teamId, viewerId)

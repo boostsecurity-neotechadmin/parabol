@@ -1,5 +1,8 @@
 import graphql from 'babel-plugin-relay/macro'
 import {commitMutation} from 'react-relay'
+import {AddTeamMutation as TAddTeamMutation} from '../__generated__/AddTeamMutation.graphql'
+import {AddTeamMutation_notification$data} from '../__generated__/AddTeamMutation_notification.graphql'
+import {AddTeamMutation_team$data} from '../__generated__/AddTeamMutation_team.graphql'
 import {
   HistoryLocalHandler,
   OnNextHandler,
@@ -8,9 +11,6 @@ import {
   StandardMutation
 } from '../types/relayMutations'
 import getGraphQLError from '../utils/relay/getGraphQLError'
-import {AddTeamMutation as TAddTeamMutation} from '../__generated__/AddTeamMutation.graphql'
-import {AddTeamMutation_notification$data} from '../__generated__/AddTeamMutation_notification.graphql'
-import {AddTeamMutation_team$data} from '../__generated__/AddTeamMutation_team.graphql'
 import handleAddTeams from './handlers/handleAddTeams'
 import handleRemoveSuggestedActions from './handlers/handleRemoveSuggestedActions'
 
@@ -19,9 +19,11 @@ graphql`
     team {
       id
       name
+      ...PublicTeamsFrag_team
       ...NewTeamForm_teams
       ...MeetingsDashActiveMeetings
       ...Team_team
+      ...ActivityDetailsSidebar_teams
     }
   }
 `
@@ -71,10 +73,13 @@ export const addTeamMutationNotificationUpdater: SharedUpdater<
   handleRemoveSuggestedActions(removedSuggestedActionId, store)
 }
 
-const AddTeamMutation: StandardMutation<TAddTeamMutation, HistoryLocalHandler> = (
+type ExtendedHistoryLocalHandler = HistoryLocalHandler & {
+  showTeamCreatedToast?: boolean
+}
+const AddTeamMutation: StandardMutation<TAddTeamMutation, ExtendedHistoryLocalHandler> = (
   atmosphere,
   variables,
-  {history, onError, onCompleted}
+  {history, onError, onCompleted, showTeamCreatedToast = true}
 ) => {
   return commitMutation<TAddTeamMutation>(atmosphere, {
     mutation,
@@ -91,7 +96,9 @@ const AddTeamMutation: StandardMutation<TAddTeamMutation, HistoryLocalHandler> =
       if (!error) {
         const {authToken} = addTeam
         atmosphere.setAuthToken(authToken)
-        popTeamCreatedToast(addTeam, {atmosphere, history})
+        if (showTeamCreatedToast) {
+          popTeamCreatedToast(addTeam, {atmosphere, history})
+        }
       }
     },
     onError

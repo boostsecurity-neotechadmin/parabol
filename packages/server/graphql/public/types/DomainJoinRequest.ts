@@ -1,9 +1,9 @@
-import {DomainJoinRequestResolvers} from '../resolverTypes'
-import {getUserId} from '../../../utils/authorization'
 import DomainJoinRequestId from 'parabol-client/shared/gqlIds/DomainJoinRequestId'
-import {GQLContext} from '../../graphql'
 import getRethink from '../../../database/rethinkDriver'
+import {getUserId} from '../../../utils/authorization'
+import {GQLContext} from '../../graphql'
 import isValid from '../../isValid'
+import {DomainJoinRequestResolvers} from '../resolverTypes'
 
 const DomainJoinRequest: DomainJoinRequestResolvers = {
   id: ({id}) => {
@@ -31,11 +31,10 @@ const DomainJoinRequest: DomainJoinRequestResolvers = {
 
     const leadTeamIds = leadTeamMembers.map((teamMember) => teamMember.teamId)
     const leadTeams = (await dataLoader.get('teams').loadMany(leadTeamIds)).filter(isValid)
-    const validOrgIds = await r
-      .table('Organization')
-      .getAll(r.args(leadTeams.map((team) => team.orgId)))
-      .filter({activeDomain: domain})('id')
-      .run()
+    const teamOrgs = await Promise.all(
+      leadTeams.map((t) => dataLoader.get('organizations').loadNonNull(t.orgId))
+    )
+    const validOrgIds = teamOrgs.filter((org) => org.activeDomain === domain).map(({id}) => id)
 
     const validTeams = leadTeams.filter((team) => validOrgIds.includes(team.orgId))
     return validTeams

@@ -6,12 +6,9 @@ import addComment from './mutations/addComment'
 import addGitHubAuth from './mutations/addGitHubAuth'
 import addIntegrationProvider from './mutations/addIntegrationProvider'
 import addOrg from './mutations/addOrg'
-import addPokerTemplate from './mutations/addPokerTemplate'
 import addPokerTemplateDimension from './mutations/addPokerTemplateDimension'
 import addPokerTemplateScale from './mutations/addPokerTemplateScale'
 import addPokerTemplateScaleValue from './mutations/addPokerTemplateScaleValue'
-import addReactjiToReactable from './mutations/addReactjiToReactable'
-import addReflectTemplate from './mutations/addReflectTemplate'
 import addReflectTemplatePrompt from './mutations/addReflectTemplatePrompt'
 import addSlackAuth from './mutations/addSlackAuth'
 import addTeam from './mutations/addTeam'
@@ -77,9 +74,9 @@ import removePokerTemplate from './mutations/removePokerTemplate'
 import removePokerTemplateDimension from './mutations/removePokerTemplateDimension'
 import removePokerTemplateScale from './mutations/removePokerTemplateScale'
 import removePokerTemplateScaleValue from './mutations/removePokerTemplateScaleValue'
-import removeReflection from './mutations/removeReflection'
 import removeReflectTemplate from './mutations/removeReflectTemplate'
 import removeReflectTemplatePrompt from './mutations/removeReflectTemplatePrompt'
+import removeReflection from './mutations/removeReflection'
 import removeSlackAuth from './mutations/removeSlackAuth'
 import removeTeamMember from './mutations/removeTeamMember'
 import removeTeamMemberIntegrationAuth from './mutations/removeTeamMemberIntegrationAuth'
@@ -90,7 +87,6 @@ import renamePokerTemplateScale from './mutations/renamePokerTemplateScale'
 import renameReflectTemplatePrompt from './mutations/renameReflectTemplatePrompt'
 import resetPassword from './mutations/resetPassword'
 import resetRetroMeetingToGroupStage from './mutations/resetRetroMeetingToGroupStage'
-import segmentEventTrack from './mutations/segmentEventTrack'
 import selectTemplate from './mutations/selectTemplate'
 import setAppLocation from './mutations/setAppLocation'
 import setDefaultSlackChannel from './mutations/setDefaultSlackChannel'
@@ -101,9 +97,7 @@ import setSlackNotification from './mutations/setSlackNotification'
 import setStageTimer from './mutations/setStageTimer'
 import setTaskEstimate from './mutations/setTaskEstimate'
 import setTaskHighlight from './mutations/setTaskHighlight'
-import startCheckIn from './mutations/startCheckIn'
 import startDraggingReflection from './mutations/startDraggingReflection'
-import startRetrospective from './mutations/startRetrospective'
 import startSprintPoker from './mutations/startSprintPoker'
 import toggleTeamDrawer from './mutations/toggleTeamDrawer'
 import updateAgendaItem from './mutations/updateAgendaItem'
@@ -133,12 +127,9 @@ export default new GraphQLObjectType<any, GQLContext>({
       addAgendaItem,
       addAtlassianAuth,
       addComment,
-      addPokerTemplate,
       addPokerTemplateDimension,
       addPokerTemplateScale,
       addPokerTemplateScaleValue,
-      addReactjiToReactable,
-      addReflectTemplate,
       addReflectTemplatePrompt,
       addSlackAuth,
       addGitHubAuth,
@@ -207,7 +198,6 @@ export default new GraphQLObjectType<any, GQLContext>({
       removeTeamMember,
       resetPassword,
       resetRetroMeetingToGroupStage,
-      segmentEventTrack,
       selectTemplate,
       setAppLocation,
       setDefaultSlackChannel,
@@ -215,8 +205,6 @@ export default new GraphQLObjectType<any, GQLContext>({
       setStageTimer,
       setSlackNotification,
       startDraggingReflection,
-      startCheckIn,
-      startRetrospective,
       startSprintPoker,
       setTaskHighlight,
       updateAgendaItem,
@@ -255,5 +243,5 @@ export default new GraphQLObjectType<any, GQLContext>({
       removeTeamMemberIntegrationAuth,
       endTeamPrompt,
       updateAzureDevOpsDimensionField
-    } as any)
+    }) as any
 })

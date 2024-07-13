@@ -1,21 +1,21 @@
 import tracer from 'dd-trace'
 import {r} from 'rethinkdb-ts'
 import uws, {SHARED_COMPRESSOR} from 'uWebSockets.js'
+import sleep from '../client/utils/sleep'
 import ICSHandler from './ICSHandler'
-import PROD from './PROD'
 import PWAHandler from './PWAHandler'
+import activeClients from './activeClients'
 import stripeWebhookHandler from './billing/stripeWebhookHandler'
 import createSSR from './createSSR'
 import httpGraphQLHandler from './graphql/httpGraphQLHandler'
 import intranetGraphQLHandler from './graphql/intranetGraphQLHandler'
-import webhookGraphQLHandler from './graphql/webhookGraphQLHandler'
 import './initSentry'
-import githubWebhookHandler from './integrations/githubWebhookHandler'
 import jiraImagesHandler from './jiraImagesHandler'
 import listenHandler from './listenHandler'
 import './monkeyPatchFetch'
 import selfHostedHandler from './selfHostedHandler'
 import handleClose from './socketHandlers/handleClose'
+import handleDisconnect from './socketHandlers/handleDisconnect'
 import handleMessage from './socketHandlers/handleMessage'
 import handleOpen from './socketHandlers/handleOpen'
 import handleUpgrade from './socketHandlers/handleUpgrade'
@@ -25,19 +25,35 @@ import staticFileHandler from './staticFileHandler'
 import SAMLHandler from './utils/SAMLHandler'
 
 tracer.init({
-  service: `Web ${process.env.SERVER_ID}`,
+  service: `web`,
   appsec: process.env.DD_APPSEC_ENABLED === 'true',
-  plugins: false
+  plugins: false,
+  version: process.env.npm_package_version
 })
 tracer.use('ioredis').use('http').use('pg')
 
-if (!PROD) {
+if (!__PRODUCTION__) {
   process.on('SIGINT', async () => {
     r.getPoolMaster()?.drain()
   })
 }
 
-const PORT = Number(PROD ? process.env.PORT : process.env.SOCKET_PORT)
+process.on('SIGTERM', async (signal) => {
+  console.log(
+    `Server ID: ${process.env.SERVER_ID}. Kill signal received: ${signal}, starting graceful shutdown.`
+  )
+  const RECONNECT_WINDOW = 60_000 // ms
+  await Promise.allSettled(
+    Object.values(activeClients.store).map(async (connectionContext) => {
+      const disconnectIn = Math.floor(Math.random() * RECONNECT_WINDOW)
+      await sleep(disconnectIn)
+      handleDisconnect(connectionContext)
+    })
+  )
+  console.log(`Server ID: ${process.env.SERVER_ID}. Graceful shutdown complete, exiting.`)
+})
+
+const PORT = Number(__PRODUCTION__ ? process.env.PORT : process.env.SOCKET_PORT)
 uws
   .App()
   .get('/favicon.ico', PWAHandler)
@@ -51,8 +67,6 @@ uws
   .get('/jira-attachments/:fileName', jiraImagesHandler)
   .post('/sse-ping', SSEPingHandler)
   .post('/stripe', stripeWebhookHandler)
-  .post('/webhooks/github', githubWebhookHandler)
-  .post('/webhooks/graphql', webhookGraphQLHandler)
   .post('/graphql', httpGraphQLHandler)
   .post('/intranet-graphql', intranetGraphQLHandler)
   .post('/saml/:domain', SAMLHandler)

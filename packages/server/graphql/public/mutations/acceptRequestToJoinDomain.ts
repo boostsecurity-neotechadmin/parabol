@@ -1,19 +1,20 @@
-import {getUserId} from '../../../utils/authorization'
-import {MutationResolvers} from '../resolverTypes'
-import getKysely from '../../../postgres/getKysely'
-import standardError from '../../../utils/standardError'
-import getRethink from '../../../database/rethinkDriver'
-import getTeamsByIds from '../../../postgres/queries/getTeamsByIds'
-import RedisLock from '../../../utils/RedisLock'
-import insertNewTeamMember from '../../../safeMutations/insertNewTeamMember'
-import addTeamIdToTMS from '../../../safeMutations/addTeamIdToTMS'
-import adjustUserCount from '../../../billing/helpers/adjustUserCount'
-import {InvoiceItemType, SubscriptionChannel} from 'parabol-client/types/constEnums'
-import setUserTierForUserIds from '../../../utils/setUserTierForUserIds'
-import publish from '../../../utils/publish'
-import toTeamMemberId from 'parabol-client/utils/relay/toTeamMemberId'
 import DomainJoinRequestId from 'parabol-client/shared/gqlIds/DomainJoinRequestId'
+import {InvoiceItemType, SubscriptionChannel} from 'parabol-client/types/constEnums'
+import toTeamMemberId from 'parabol-client/utils/relay/toTeamMemberId'
+import adjustUserCount from '../../../billing/helpers/adjustUserCount'
+import getRethink from '../../../database/rethinkDriver'
+import getKysely from '../../../postgres/getKysely'
+import getTeamsByIds from '../../../postgres/queries/getTeamsByIds'
 import {getUserById} from '../../../postgres/queries/getUsersByIds'
+import addTeamIdToTMS from '../../../safeMutations/addTeamIdToTMS'
+import insertNewTeamMember from '../../../safeMutations/insertNewTeamMember'
+import {Logger} from '../../../utils/Logger'
+import RedisLock from '../../../utils/RedisLock'
+import {getUserId} from '../../../utils/authorization'
+import publish from '../../../utils/publish'
+import setUserTierForUserIds from '../../../utils/setUserTierForUserIds'
+import standardError from '../../../utils/standardError'
+import {MutationResolvers} from '../resolverTypes'
 
 // TODO (EXPERIMENT: prompt-to-join-org): some parts are borrowed from acceptTeamInvitation, create generic functions
 const acceptRequestToJoinDomain: MutationResolvers['acceptRequestToJoinDomain'] = async (
@@ -55,11 +56,10 @@ const acceptRequestToJoinDomain: MutationResolvers['acceptRequestToJoinDomain'] 
 
   // Provided request domain should match team's organizations activeDomain
   const leadTeams = await getTeamsByIds(validTeamMembers.map((teamMember) => teamMember.teamId))
-  const validOrgIds = await r
-    .table('Organization')
-    .getAll(r.args(leadTeams.map((team) => team.orgId)))
-    .filter({activeDomain: domain})('id')
-    .run()
+  const teamOrgs = await Promise.all(
+    leadTeams.map((t) => dataLoader.get('organizations').loadNonNull(t.orgId))
+  )
+  const validOrgIds = teamOrgs.filter((org) => org.activeDomain === domain).map(({id}) => id)
 
   if (!validOrgIds.length) {
     return standardError(new Error('Invalid organizations'))
@@ -91,22 +91,16 @@ const acceptRequestToJoinDomain: MutationResolvers['acceptRequestToJoinDomain'] 
   for (const validTeam of validTeams) {
     const {id: teamId, orgId} = validTeam
     const [organizationUser] = await Promise.all([
-      r
-        .table('OrganizationUser')
-        .getAll(userId, {index: 'userId'})
-        .filter({orgId, removedAt: null})
-        .nth(0)
-        .default(null)
-        .run(),
+      dataLoader.get('organizationUsersByUserIdOrgId').load({orgId, userId}),
       insertNewTeamMember(user, teamId),
       addTeamIdToTMS(userId, teamId)
     ])
 
     if (!organizationUser) {
       try {
-        await adjustUserCount(userId, orgId, InvoiceItemType.ADD_USER)
+        await adjustUserCount(userId, orgId, InvoiceItemType.ADD_USER, dataLoader)
       } catch (e) {
-        console.log(e)
+        Logger.log(e)
       }
       await setUserTierForUserIds([userId])
     }
@@ -133,7 +127,13 @@ const acceptRequestToJoinDomain: MutationResolvers['acceptRequestToJoinDomain'] 
     publish(SubscriptionChannel.TEAM, teamId, 'AcceptTeamInvitationPayload', data, subOptions)
 
     // Send individualized message to the user
-    publish(SubscriptionChannel.TEAM, userId, 'AcceptTeamInvitationPayload', data, subOptions)
+    publish(
+      SubscriptionChannel.NOTIFICATION,
+      userId,
+      'AcceptTeamInvitationPayload',
+      data,
+      subOptions
+    )
   })
 
   return {viewerId}

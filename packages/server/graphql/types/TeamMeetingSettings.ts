@@ -1,6 +1,8 @@
 import {GraphQLID, GraphQLInterfaceType, GraphQLList, GraphQLNonNull} from 'graphql'
-import {MeetingTypeEnum as TMeetingTypeEnum} from '../../postgres/types/Meeting'
 import {NewMeetingPhaseTypeEnum as TNewMeetingPhaseTypeEnum} from '../../database/types/GenericMeetingPhase'
+import {MeetingTypeEnum as TMeetingTypeEnum} from '../../postgres/types/Meeting'
+import isPhaseAvailable from '../../utils/isPhaseAvailable'
+import {GQLContext} from '../graphql'
 import {resolveTeam} from '../resolvers'
 import ActionMeetingSettings from './ActionMeetingSettings'
 import MeetingTypeEnum from './MeetingTypeEnum'
@@ -9,8 +11,7 @@ import PokerMeetingSettings from './PokerMeetingSettings'
 import RetrospectiveMeetingSettings from './RetrospectiveMeetingSettings'
 import Team from './Team'
 import TeamPromptMeetingSettings from './TeamPromptMeetingSettings'
-import isPhaseAvailable from '../../utils/isPhaseAvailable'
-import {GQLContext} from '../graphql'
+import {getFeatureTier} from './helpers/getFeatureTier'
 
 export const teamMeetingSettingsFields = () => ({
   id: {
@@ -29,7 +30,7 @@ export const teamMeetingSettingsFields = () => ({
       {dataLoader}: GQLContext
     ) => {
       const team = await dataLoader.get('teams').loadNonNull(teamId)
-      return phaseTypes.filter(isPhaseAvailable(team.tier))
+      return phaseTypes.filter(isPhaseAvailable(getFeatureTier(team)))
     }
   },
   teamId: {

@@ -1,14 +1,16 @@
 import {GraphQLID, GraphQLNonNull} from 'graphql'
+import {sql} from 'kysely'
 import {SubscriptionChannel} from 'parabol-client/types/constEnums'
 import removeTeamsLimitObjects from '../../billing/helpers/removeTeamsLimitObjects'
 import getRethink from '../../database/rethinkDriver'
 import Team from '../../database/types/Team'
 import User from '../../database/types/User'
+import getKysely from '../../postgres/getKysely'
 import IUser from '../../postgres/types/IUser'
 import safeArchiveTeam from '../../safeMutations/safeArchiveTeam'
+import {analytics} from '../../utils/analytics/analytics'
 import {getUserId, isSuperUser, isUserBillingLeader} from '../../utils/authorization'
 import publish from '../../utils/publish'
-import segmentIo from '../../utils/segmentIo'
 import standardError from '../../utils/standardError'
 import {GQLContext} from '../graphql'
 import isValid from '../isValid'
@@ -40,7 +42,10 @@ export default {
       }
     }
 
-    const organization = await dataLoader.get('organizations').load(orgId)
+    const [organization, viewer] = await Promise.all([
+      dataLoader.get('organizations').loadNonNull(orgId),
+      dataLoader.get('users').loadNonNull(viewerId)
+    ])
     const {tier} = organization
     if (tier !== 'starter') {
       return standardError(new Error('You must first downgrade before archiving'), {
@@ -49,13 +54,7 @@ export default {
     }
 
     // RESOLUTION
-    segmentIo.track({
-      userId: viewerId,
-      event: 'Archive Organization',
-      properties: {
-        orgId
-      }
-    })
+    analytics.archiveOrganization(viewer, orgId)
     const teams = await dataLoader.get('teamsByOrgIds').load(orgId)
     const teamIds = teams.map(({id}) => id)
     const teamArchiveResults = (await Promise.all(
@@ -84,6 +83,12 @@ export default {
     const uniqueUserIds = Array.from(new Set(allUserIds))
 
     await Promise.all([
+      getKysely()
+        .updateTable('OrganizationUser')
+        .set({removedAt: sql`CURRENT_TIMESTAMP`})
+        .where('orgId', '=', orgId)
+        .where('removedAt', 'is', null)
+        .execute(),
       r
         .table('OrganizationUser')
         .getAll(orgId, {index: 'orgId'})

@@ -1,8 +1,10 @@
 import base64url from 'base64url'
 import crypto from 'crypto'
 import faker from 'faker'
+import {sql} from 'kysely'
 import getRethink from '../database/rethinkDriver'
 import ServerAuthToken from '../database/types/ServerAuthToken'
+import getKysely from '../postgres/getKysely'
 import encodeAuthToken from '../utils/encodeAuthToken'
 
 const HOST = process.env.GRAPHQL_HOST || 'localhost:3000'
@@ -91,10 +93,10 @@ const SIGNUP_WITH_PASSWORD_MUTATION = `
     $email: ID!
     $password: String!
     $invitationToken: ID!
-    $segmentId: ID
+    $pseudoId: ID
     $params: String!
   ) {
-    signUpWithPassword(email: $email, password: $password, invitationToken: $invitationToken, segmentId: $segmentId, params: $params) {
+    signUpWithPassword(email: $email, password: $password, invitationToken: $invitationToken, pseudoId: $pseudoId, params: $params) {
       error {
         message
       }
@@ -135,7 +137,7 @@ export const signUpWithEmail = async (emailInput: string) => {
     variables: {
       email,
       password,
-      segmentId: null,
+      pseudoId: null,
       invitationToken: '',
       params: ''
     }
@@ -199,5 +201,27 @@ export const getUserTeams = async (userId: string) => {
       }
     }
   })
-  return user.data.user.teams
+  return user.data.user.teams as [{id: string}, ...{id: string}[]]
+}
+
+export const createPGTables = async (...tables: string[]) => {
+  const pg = getKysely()
+  await Promise.all(
+    tables.map(async (table) => {
+      return sql`
+      CREATE TABLE IF NOT EXISTS ${sql.table(table)} (like "public".${sql.table(table)} including ALL)`.execute(
+        pg
+      )
+    })
+  )
+  await truncatePGTables(...tables)
+}
+
+export const truncatePGTables = async (...tables: string[]) => {
+  const pg = getKysely()
+  await Promise.all(
+    tables.map(async (table) => {
+      return sql`TRUNCATE TABLE ${sql.table(table)} CASCADE`.execute(pg)
+    })
+  )
 }

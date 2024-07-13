@@ -1,13 +1,14 @@
-import React, {useState} from 'react'
-import {Info} from '@mui/icons-material'
-import {Elevation} from '../../../../styles/elevation'
-import BaseButton from '../../../../components/BaseButton'
-import {Radius} from '../../../../types/constEnums'
-import {PALETTE} from '../../../../styles/paletteV3'
-import {TierEnum} from '../../../../__generated__/SendClientSegmentEventMutation.graphql'
 import styled from '@emotion/styled'
-import useTooltip from '../../../../hooks/useTooltip'
+import {Info} from '@mui/icons-material'
+import React, {useState} from 'react'
+import {TierEnum} from '../../../../__generated__/OrganizationSubscription.graphql'
+import BaseButton from '../../../../components/BaseButton'
 import {MenuPosition} from '../../../../hooks/useCoords'
+import useTooltip from '../../../../hooks/useTooltip'
+import {Elevation} from '../../../../styles/elevation'
+import {PALETTE} from '../../../../styles/paletteV3'
+import {Radius} from '../../../../types/constEnums'
+import {MONTHLY_PRICE} from '../../../../utils/constants'
 
 const PlanTitle = styled('h6')({
   color: PALETTE.SLATE_700,
@@ -93,18 +94,17 @@ const Plan = styled('div')<{tier: TierEnum; isTablet: boolean; isActive: boolean
       ? tier === 'starter'
         ? `2px solid ${PALETTE.GRAPE_500}`
         : tier === 'team'
-        ? `2px solid ${PALETTE.AQUA_400}`
-        : `2px solid ${PALETTE.TOMATO_400}`
+          ? `2px solid ${PALETTE.AQUA_400}`
+          : `2px solid ${PALETTE.TOMATO_400}`
       : '2px solid transparent',
     transition: 'all ease 0.5s',
     '&:hover': {
-      cursor: 'pointer',
       outline: `2px solid ${
         tier === 'starter'
           ? PALETTE.GRAPE_500
           : tier === 'team'
-          ? PALETTE.AQUA_400
-          : PALETTE.TOMATO_500
+            ? PALETTE.AQUA_400
+            : PALETTE.TOMATO_500
       }`
     },
     '&:last-of-type': {
@@ -126,14 +126,14 @@ const CTAButton = styled(BaseButton)<{
     buttonStyle === 'primary'
       ? PALETTE.GRADIENT_TOMATO_600_ROSE_500
       : buttonStyle === 'secondary'
-      ? PALETTE.WHITE
-      : PALETTE.SLATE_300,
+        ? PALETTE.WHITE
+        : PALETTE.SLATE_300,
   color:
     buttonStyle === 'primary'
       ? PALETTE.WHITE
       : buttonStyle === 'secondary'
-      ? PALETTE.SLATE_900
-      : PALETTE.SLATE_600,
+        ? PALETTE.SLATE_900
+        : PALETTE.SLATE_600,
   border: buttonStyle === 'secondary' ? `1px solid ${PALETTE.SLATE_600}` : 'none',
   transition: 'all ease 0.5s',
   ':hover': {
@@ -142,9 +142,8 @@ const CTAButton = styled(BaseButton)<{
       buttonStyle === 'primary'
         ? PALETTE.GRADIENT_TOMATO_700_ROSE_600
         : buttonStyle === 'secondary'
-        ? PALETTE.TOMATO_100
-        : PALETTE.SLATE_300,
-    borderColor: buttonStyle === 'secondary' ? PALETTE.TOMATO_500 : 'none'
+          ? PALETTE.SLATE_300
+          : PALETTE.SLATE_300
   }
 }))
 
@@ -183,13 +182,13 @@ const OrgPlan = (props: Props) => {
     defaultLabel === 'Select Plan' && hasSelectedTeamPlan ? 'Selected Plan' : defaultLabel
 
   return (
-    <Plan tier={planTier} isTablet={isTablet} isActive={isActive}>
+    <Plan tier={planTier} isTablet={isTablet} isActive={isActive} onClick={handleClickCTA}>
       <HeadingBlock>
         <PlanTitle>{planTier}</PlanTitle>
         {planTier === 'team' ? (
           <>
             <PlanSubtitle>
-              {'$6 per active user '}
+              {`$${MONTHLY_PRICE} per active user `}
               <StyledIcon ref={originRef} onMouseOver={openTooltip} onMouseOut={closeTooltip}>
                 {<Info />}
               </StyledIcon>
@@ -208,7 +207,7 @@ const OrgPlan = (props: Props) => {
           </LI>
         ))}
       </UL>
-      <CTAButton onClick={handleClickCTA} buttonStyle={buttonStyle} size='medium'>
+      <CTAButton buttonStyle={buttonStyle} size='medium'>
         {buttonLabel}
       </CTAButton>
     </Plan>

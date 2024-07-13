@@ -3,13 +3,13 @@ import graphql from 'babel-plugin-relay/macro'
 import React, {Suspense, useEffect, useMemo} from 'react'
 import {commitLocalUpdate, useFragment} from 'react-relay'
 import {useHistory} from 'react-router'
+import {TeamPromptMeeting_meeting$key} from '~/__generated__/TeamPromptMeeting_meeting.graphql'
 import useAtmosphere from '~/hooks/useAtmosphere'
 import useMeeting from '~/hooks/useMeeting'
 import useTransition from '~/hooks/useTransition'
 import {DiscussionThreadEnum} from '~/types/constEnums'
 import {isNotNull} from '~/utils/predicates'
 import sortByISO8601Date from '~/utils/sortByISO8601Date'
-import {TeamPromptMeeting_meeting$key} from '~/__generated__/TeamPromptMeeting_meeting.graphql'
 import getPhaseByTypename from '../utils/getPhaseByTypename'
 import ErrorBoundary from './ErrorBoundary'
 import MeetingArea from './MeetingArea'
@@ -37,13 +37,14 @@ const ResponsesGridContainer = styled('div')({
   }
 })
 
-const ResponsesGrid = styled('div')({
+const ResponsesGrid = styled('div')<{isSingleColumn: boolean}>(({isSingleColumn}) => ({
   flex: 1,
   display: 'flex',
   flexWrap: 'wrap',
+  flexDirection: isSingleColumn ? 'column' : 'row',
   position: 'relative',
   gap: 32
-})
+}))
 
 interface Props {
   meeting: TeamPromptMeeting_meeting$key
@@ -69,6 +70,7 @@ const TeamPromptMeeting = (props: Props) => {
         id
         isRightDrawerOpen
         endedAt
+        localStageId
         phases {
           ... on TeamPromptResponsesPhase {
             __typename
@@ -86,11 +88,18 @@ const TeamPromptMeeting = (props: Props) => {
             }
           }
         }
+        organization {
+          featureFlags {
+            singleColumnStandups
+          }
+        }
       }
     `,
     meetingRef
   )
-  const {phases} = meeting
+  const {phases, organization} = meeting
+  const {featureFlags} = organization
+  const {singleColumnStandups} = featureFlags
   const atmosphere = useAtmosphere()
   const {viewerId} = atmosphere
 
@@ -125,7 +134,7 @@ const TeamPromptMeeting = (props: Props) => {
   const transitioningStages = useTransition(stages)
   const {safeRoute, isDesktop} = useMeeting(meeting)
   const history = useHistory()
-  const {isRightDrawerOpen, id: meetingId} = meeting
+  const {isRightDrawerOpen, id: meetingId, localStageId} = meeting
   const params = new URLSearchParams(history.location.search)
   const responseId = params.get('responseId')
   useEffect(() => {
@@ -142,9 +151,23 @@ const TeamPromptMeeting = (props: Props) => {
       const meetingProxy = store.get(meetingId)
       if (!meetingProxy) return
       meetingProxy.setValue(stage.id, 'localStageId')
+      meetingProxy.setValue(false, 'showWorkSidebar')
       meetingProxy.setValue(true, 'isRightDrawerOpen')
     })
   }, [responseId])
+
+  useEffect(() => {
+    if (localStageId || !!meeting?.endedAt) {
+      return
+    }
+    commitLocalUpdate(atmosphere, (store) => {
+      const meetingProxy = store.get(meetingId)
+      if (!meetingProxy) return
+      meetingProxy.setValue(true, 'showWorkSidebar')
+      meetingProxy.setValue(true, 'isRightDrawerOpen')
+    })
+  }, [])
+
   if (!safeRoute) return null
 
   return (
@@ -160,7 +183,7 @@ const TeamPromptMeeting = (props: Props) => {
               <TeamPromptEditablePrompt meetingRef={meeting} />
               <ErrorBoundary>
                 <ResponsesGridContainer>
-                  <ResponsesGrid>
+                  <ResponsesGrid isSingleColumn={singleColumnStandups}>
                     {transitioningStages.map((transitioningStage) => {
                       const {child: stage, onTransitionEnd, status} = transitioningStage
                       const {key, displayIdx} = stage
@@ -172,6 +195,7 @@ const TeamPromptMeeting = (props: Props) => {
                           onTransitionEnd={onTransitionEnd}
                           displayIdx={displayIdx}
                           stageRef={stage}
+                          isSingleColumn={singleColumnStandups}
                         />
                       )
                     })}

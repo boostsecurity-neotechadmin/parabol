@@ -7,18 +7,21 @@ import {
   GraphQLObjectType,
   GraphQLString
 } from 'graphql'
-import {getUserId, isSuperUser, isUserBillingLeader} from '../../utils/authorization'
+import {
+  getUserId,
+  isSuperUser,
+  isTeamMember,
+  isUserBillingLeader,
+  isUserOrgAdmin
+} from '../../utils/authorization'
 import {GQLContext} from '../graphql'
 import getActiveTeamCountByOrgIds from '../public/types/helpers/getActiveTeamCountByOrgIds'
 import {resolveForBillingLeaders} from '../resolvers'
 import CreditCard from './CreditCard'
 import GraphQLISO8601Type from './GraphQLISO8601Type'
-import GraphQLURLType from './GraphQLURLType'
-import OrganizationUser, {OrganizationUserConnection} from './OrganizationUser'
 import OrgUserCount from './OrgUserCount'
+import OrganizationUser, {OrganizationUserConnection} from './OrganizationUser'
 import Team from './Team'
-import TierEnum from './TierEnum'
-import User from './User'
 
 const Organization: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLContext>({
   name: 'Organization',
@@ -47,19 +50,23 @@ const Organization: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<a
     },
     isBillingLeader: {
       type: new GraphQLNonNull(GraphQLBoolean),
-      description: 'true if the viewer is the billing leader for the org',
+      description: 'true if the viewer holds the billing leader role on the org',
       resolve: async ({id: orgId}, _args: unknown, {authToken, dataLoader}) => {
         const viewerId = getUserId(authToken)
         return isUserBillingLeader(viewerId, orgId, dataLoader)
       }
     },
+    isOrgAdmin: {
+      type: new GraphQLNonNull(GraphQLBoolean),
+      description: 'true if the viewer holds the the org admin role on the org',
+      resolve: async ({id: orgId}, _args: unknown, {authToken, dataLoader}) => {
+        const viewerId = getUserId(authToken)
+        return isUserOrgAdmin(viewerId, orgId, dataLoader)
+      }
+    },
     name: {
       type: new GraphQLNonNull(GraphQLString),
       description: 'The name of the organization'
-    },
-    picture: {
-      type: GraphQLURLType,
-      description: 'The org avatar'
     },
     activeTeamCount: {
       type: new GraphQLNonNull(GraphQLInt),
@@ -68,21 +75,53 @@ const Organization: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<a
         return getActiveTeamCountByOrgIds(orgId)
       }
     },
-    teams: {
+    allTeams: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(Team))),
-      description: 'all the teams the viewer is on in the organization',
-      resolve: async ({id: orgId}, _args: unknown, {authToken, dataLoader}) => {
+      description:
+        'All the teams in the organization. If the viewer is not a billing lead, org admin, super user, or they do not have the publicTeams flag, return the teams they are a member of.',
+      resolve: async ({id: orgId}, _args: unknown, {dataLoader, authToken}) => {
         const viewerId = getUserId(authToken)
-        const allTeamsOnOrg = await dataLoader.get('teamsByOrgIds').load(orgId)
-        const isBillingLeader = await isUserBillingLeader(viewerId, orgId, dataLoader)
-        return isBillingLeader || isSuperUser(authToken)
-          ? allTeamsOnOrg
-          : allTeamsOnOrg.filter((team) => authToken.tms.includes(team.id))
+        const [allTeamsOnOrg, organization, isOrgAdmin, isBillingLeader] = await Promise.all([
+          dataLoader.get('teamsByOrgIds').load(orgId),
+          dataLoader.get('organizations').loadNonNull(orgId),
+          isUserOrgAdmin(viewerId, orgId, dataLoader),
+          isUserBillingLeader(viewerId, orgId, dataLoader)
+        ])
+        const sortedTeamsOnOrg = allTeamsOnOrg.sort((a, b) => a.name.localeCompare(b.name))
+        const hasPublicTeamsFlag = !!organization.featureFlags?.includes('publicTeams')
+        if (isBillingLeader || isOrgAdmin || isSuperUser(authToken) || hasPublicTeamsFlag) {
+          const viewerTeams = sortedTeamsOnOrg.filter((team) => authToken.tms.includes(team.id))
+          const otherTeams = sortedTeamsOnOrg.filter((team) => !authToken.tms.includes(team.id))
+          return [...viewerTeams, ...otherTeams]
+        } else {
+          return sortedTeamsOnOrg.filter((team) => authToken.tms.includes(team.id))
+        }
       }
     },
-    tier: {
-      type: new GraphQLNonNull(TierEnum),
-      description: 'The level of access to features on the parabol site'
+    viewerTeams: {
+      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(Team))),
+      description: 'all the teams the viewer is on in the organization',
+      resolve: async ({id: orgId}, _args: unknown, {dataLoader, authToken}) => {
+        const allTeamsOnOrg = await dataLoader.get('teamsByOrgIds').load(orgId)
+        return allTeamsOnOrg
+          .filter((team) => authToken.tms.includes(team.id))
+          .sort((a, b) => a.name.localeCompare(b.name))
+      }
+    },
+    publicTeams: {
+      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(Team))),
+      description:
+        'all the teams that the viewer does not belong to that are in the organization. Only visible if the org has the publicTeams flag set to true.',
+      resolve: async ({id: orgId}, _args: unknown, {dataLoader, authToken}) => {
+        const [allTeamsOnOrg, organization] = await Promise.all([
+          dataLoader.get('teamsByOrgIds').load(orgId),
+          dataLoader.get('organizations').loadNonNull(orgId)
+        ])
+        const hasPublicTeamsFlag = !!organization.featureFlags?.includes('publicTeams')
+        if (!isSuperUser(authToken) || !hasPublicTeamsFlag) return []
+        const publicTeams = allTeamsOnOrg.filter((team) => !isTeamMember(authToken, team.id))
+        return publicTeams
+      }
     },
     periodEnd: {
       type: GraphQLISO8601Type,
@@ -188,14 +227,14 @@ const Organization: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<a
       }
     },
     billingLeaders: {
-      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(User))),
+      type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(OrganizationUser))),
       description: 'The leaders of the org',
       resolve: async ({id: orgId}: {id: string}, _args: unknown, {dataLoader}: GQLContext) => {
         const organizationUsers = await dataLoader.get('organizationUsersByOrgId').load(orgId)
-        const billingLeaderUserIds = organizationUsers
-          .filter((organizationUser) => organizationUser.role === 'BILLING_LEADER')
-          .map(({userId}: {userId: string}) => userId)
-        return dataLoader.get('users').loadMany(billingLeaderUserIds)
+        return organizationUsers.filter(
+          (organizationUser) =>
+            organizationUser.role === 'BILLING_LEADER' || organizationUser.role === 'ORG_ADMIN'
+        )
       }
     }
   })

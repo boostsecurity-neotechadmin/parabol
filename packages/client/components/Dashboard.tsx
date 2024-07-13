@@ -4,18 +4,19 @@ import React, {lazy, useRef} from 'react'
 import {PreloadedQuery, usePreloadedQuery} from 'react-relay'
 import {Route, Switch} from 'react-router'
 import useBreakpoint from '~/hooks/useBreakpoint'
+import useNewFeatureSnackbar from '~/hooks/useNewFeatureSnackbar'
 import useSnackNag from '~/hooks/useSnackNag'
 import useSnacksForNewMeetings from '~/hooks/useSnacksForNewMeetings'
-import useNewFeatureSnackbar from '~/hooks/useNewFeatureSnackbar'
 import {PALETTE} from '~/styles/paletteV3'
 import {Breakpoint} from '~/types/constEnums'
+import {DashboardQuery} from '../__generated__/DashboardQuery.graphql'
 import useSidebar from '../hooks/useSidebar'
 import useUsageSnackNag from '../hooks/useUsageSnackNag'
-import {DashboardQuery} from '../__generated__/DashboardQuery.graphql'
+import DashTopBar from './DashTopBar'
 import DashSidebar from './Dashboard/DashSidebar'
 import MobileDashSidebar from './Dashboard/MobileDashSidebar'
-import DashTopBar from './DashTopBar'
 import MobileDashTopBar from './MobileDashTopBar'
+import RequestToJoinComponent from './RequestToJoin'
 import SwipeableDashSidebar from './SwipeableDashSidebar'
 
 const InsightsRoot = lazy(
@@ -149,12 +150,19 @@ const Dashboard = (props: Props) => {
         <DashMain id='main' ref={meetingsDashRef}>
           <Switch>
             <Route
-              path='(/meetings|/new-meeting)'
+              path='(/meetings)'
               render={(routeProps) => (
                 <MeetingsDash {...routeProps} meetingsDashRef={meetingsDashRef} viewer={viewer} />
               )}
             />
             <Route path='/me' component={UserDashboard} />
+            <Route
+              exact
+              path='/team/:teamId/requestToJoin'
+              render={(routeProps) => (
+                <RequestToJoinComponent key={routeProps.match.params.teamId} {...routeProps} />
+              )}
+            />
             <Route path='/team/:teamId' component={TeamRoot} />
             <Route path='/newteam/:defaultOrgId?' component={NewTeam} />
             <Route path='/usage' component={InsightsRoot} />

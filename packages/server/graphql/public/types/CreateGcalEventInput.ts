@@ -1,23 +1,16 @@
 import {
   GraphQLInputObjectType,
-  GraphQLNonNull,
-  GraphQLString,
   GraphQLInt,
-  GraphQLList
+  GraphQLList,
+  GraphQLNonNull,
+  GraphQLString
 } from 'graphql'
+import GcalVideoTypeEnum from '../../types/GcalVideoTypeEnum'
 import GraphQLEmailType from '../../types/GraphQLEmailType'
 
 const CreateGcalEventInput = new GraphQLInputObjectType({
   name: 'CreateGcalEventInput',
   fields: () => ({
-    title: {
-      type: new GraphQLNonNull(GraphQLString),
-      description: 'The title of the meeting'
-    },
-    description: {
-      type: GraphQLString,
-      description: 'The description of the meeting'
-    },
     startTimestamp: {
       type: new GraphQLNonNull(GraphQLInt),
       description: 'The start dateTime of the meeting'
@@ -34,16 +27,20 @@ const CreateGcalEventInput = new GraphQLInputObjectType({
       type: new GraphQLList(new GraphQLNonNull(GraphQLEmailType)),
       description:
         'The email addresses that will be invited to the gcal event. If not provided, no one will be invited'
+    },
+    videoType: {
+      type: GcalVideoTypeEnum,
+      description:
+        'The type of video call to be used in the meeting. Null if no video call will be used'
     }
   })
 })
 
 export type CreateGcalEventInputType = {
-  title: string
-  description: string
   startTimestamp: number
   endTimestamp: number
   timeZone: string
+  videoType?: 'meet' | 'zoom'
   invitees?: string[]
 }
 

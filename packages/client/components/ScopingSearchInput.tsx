@@ -1,11 +1,11 @@
 import styled from '@emotion/styled'
 import {Close} from '@mui/icons-material'
+import {ServiceEnumType} from 'parabol-server/graphql/types/ServiceEnum'
 import React, {useEffect, useRef} from 'react'
 import {commitLocalUpdate} from 'react-relay'
 import useAtmosphere from '../hooks/useAtmosphere'
-import SendClientSegmentEventMutation from '../mutations/SendClientSegmentEventMutation'
 import {PALETTE} from '../styles/paletteV3'
-import {TaskServiceEnum} from '../__generated__/SendClientSegmentEventMutation.graphql'
+import SendClientSideEvent from '../utils/SendClientSideEvent'
 
 const SearchInput = styled('input')({
   appearance: 'none',
@@ -38,7 +38,7 @@ interface Props {
   queryString: string
   meetingId: string
   linkedRecordName: string
-  service: TaskServiceEnum
+  service: ServiceEnumType
   defaultInput?: string
 }
 
@@ -64,7 +64,7 @@ const ScopingSearchInput = (props: Props) => {
   }, [])
 
   const trackEvent = (eventTitle: string) => {
-    SendClientSegmentEventMutation(atmosphere, eventTitle, {
+    SendClientSideEvent(atmosphere, eventTitle, {
       meetingId,
       service
     })

@@ -8,10 +8,10 @@ import {analytics} from '../../../utils/analytics/analytics'
 import {getUserId, isTeamMember} from '../../../utils/authorization'
 import publish from '../../../utils/publish'
 import standardError from '../../../utils/standardError'
+import {IntegrationNotifier} from '../../mutations/helpers/notifications/IntegrationNotifier'
 import {MutationResolvers} from '../resolverTypes'
 import publishNotification from './helpers/publishNotification'
 import createTeamPromptMentionNotifications from './helpers/publishTeamPromptMentions'
-import {IntegrationNotifier} from '../../mutations/helpers/notifications/IntegrationNotifier'
 
 const upsertTeamPromptResponse: MutationResolvers['upsertTeamPromptResponse'] = async (
   _source,
@@ -40,7 +40,10 @@ const upsertTeamPromptResponse: MutationResolvers['upsertTeamPromptResponse'] = 
       return standardError(new Error("Can't edit response in another meeting"), {userId: viewerId})
     }
   }
-  const meeting = await dataLoader.get('newMeetings').load(meetingId)
+  const [meeting, user] = await Promise.all([
+    dataLoader.get('newMeetings').load(meetingId),
+    dataLoader.get('users').loadNonNull(viewerId)
+  ])
   if (!meeting) {
     return standardError(new Error('Meeting not found'), {userId: viewerId})
   }
@@ -93,6 +96,7 @@ const upsertTeamPromptResponse: MutationResolvers['upsertTeamPromptResponse'] = 
   }
 
   notifications.forEach((notification) => {
+    IntegrationNotifier.sendNotificationToUser?.(dataLoader, notification.id, notification.userId)
     publishNotification(notification, subOptions)
   })
 
@@ -100,7 +104,7 @@ const upsertTeamPromptResponse: MutationResolvers['upsertTeamPromptResponse'] = 
     IntegrationNotifier.standupResponseSubmitted(dataLoader, meetingId, teamId, viewerId)
   }
 
-  analytics.responseAdded(viewerId, meetingId, teamPromptResponseId, !!inputTeamPromptResponseId)
+  analytics.responseAdded(user, meetingId, teamPromptResponseId, !!inputTeamPromptResponseId)
   publish(
     SubscriptionChannel.MEETING,
     meetingId,

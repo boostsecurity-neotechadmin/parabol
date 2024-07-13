@@ -1,17 +1,18 @@
 import {OrganizationFeatureFlagsResolvers} from '../resolverTypes'
 
 const OrganizationFeatureFlags: OrganizationFeatureFlagsResolvers = {
-  SAMLUI: ({SAMLUI}) => !!SAMLUI,
   noAISummary: ({noAISummary}) => !!noAISummary,
   standupAISummary: ({standupAISummary}) => !!standupAISummary,
-  promptToJoinOrg: ({promptToJoinOrg}) => !!promptToJoinOrg,
-  AIGeneratedDiscussionPrompt: ({AIGeneratedDiscussionPrompt}) => !!AIGeneratedDiscussionPrompt,
+  noPromptToJoinOrg: ({noPromptToJoinOrg}) => !!noPromptToJoinOrg,
   zoomTranscription: ({zoomTranscription}) => !!zoomTranscription,
   shareSummary: ({shareSummary}) => !!shareSummary,
   suggestGroups: ({suggestGroups}) => !!suggestGroups,
   teamsLimit: ({teamsLimit}) => !!teamsLimit,
-  teamInsights: ({teamInsights}) => !!teamInsights,
-  oneOnOne: ({oneOnOne}) => !!oneOnOne
+  noTeamInsights: ({noTeamInsights}) => !!noTeamInsights,
+  publicTeams: ({publicTeams}) => !!publicTeams,
+  singleColumnStandups: ({singleColumnStandups}) => !!singleColumnStandups,
+  aiTemplate: ({aiTemplate}) => !!aiTemplate,
+  relatedDiscussions: ({relatedDiscussions}) => !!relatedDiscussions
 }
 
 export default OrganizationFeatureFlags

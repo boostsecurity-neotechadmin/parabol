@@ -6,11 +6,16 @@ export type AutogroupReflectionGroupType = {
   reflectionIds: string[]
 }
 
+export type TranscriptBlock = {
+  speaker: string
+  words: string
+}
+
 interface Input {
   id?: string
   teamId: string
   meetingCount: number
-  name?: string
+  name: string
   phases: [GenericMeetingPhase, ...GenericMeetingPhase[]]
   facilitatorUserId: string
   showConversionModal?: boolean
@@ -18,9 +23,13 @@ interface Input {
   totalVotes: number
   maxVotesPerGroup: number
   disableAnonymity: boolean
-  transcription?: string
+  transcription?: TranscriptBlock[]
   autogroupReflectionGroups?: AutogroupReflectionGroupType[]
   resetReflectionGroups?: AutogroupReflectionGroupType[]
+  recallBotId?: string
+  videoMeetingURL?: string
+  meetingSeriesId?: number
+  scheduledEndTime?: Date
 }
 
 export function isMeetingRetrospective(meeting: Meeting): meeting is MeetingRetrospective {
@@ -41,7 +50,9 @@ export default class MeetingRetrospective extends Meeting {
   templateId: string
   topicCount?: number
   reflectionCount?: number
-  transcription?: string
+  transcription?: TranscriptBlock[]
+  recallBotId?: string
+  videoMeetingURL?: string
   autogroupReflectionGroups?: AutogroupReflectionGroupType[]
   resetReflectionGroups?: AutogroupReflectionGroupType[]
 
@@ -60,7 +71,11 @@ export default class MeetingRetrospective extends Meeting {
       disableAnonymity,
       transcription,
       autogroupReflectionGroups,
-      resetReflectionGroups
+      resetReflectionGroups,
+      recallBotId,
+      videoMeetingURL,
+      meetingSeriesId,
+      scheduledEndTime
     } = input
     super({
       id,
@@ -69,7 +84,9 @@ export default class MeetingRetrospective extends Meeting {
       phases,
       facilitatorUserId,
       meetingType: 'retrospective',
-      name: name ?? `Retro #${meetingCount + 1}`
+      name,
+      meetingSeriesId,
+      scheduledEndTime
     })
     this.totalVotes = totalVotes
     this.maxVotesPerGroup = maxVotesPerGroup
@@ -79,5 +96,7 @@ export default class MeetingRetrospective extends Meeting {
     this.transcription = transcription
     this.autogroupReflectionGroups = autogroupReflectionGroups
     this.resetReflectionGroups = resetReflectionGroups
+    this.recallBotId = recallBotId
+    this.videoMeetingURL = videoMeetingURL
   }
 }

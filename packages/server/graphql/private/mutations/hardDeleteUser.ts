@@ -6,7 +6,7 @@ import {getUserByEmail} from '../../../postgres/queries/getUsersByEmails'
 import {getUserById} from '../../../postgres/queries/getUsersByIds'
 import blacklistJWT from '../../../utils/blacklistJWT'
 import {toEpochSeconds} from '../../../utils/epochTime'
-import sendAccountRemovedToSegment from '../../mutations/helpers/sendAccountRemovedToSegment'
+import sendAccountRemovedEvent from '../../mutations/helpers/sendAccountRemovedEvent'
 import softDeleteUser from '../../mutations/helpers/softDeleteUser'
 import {MutationResolvers} from '../resolverTypes'
 
@@ -49,72 +49,54 @@ const hardDeleteUser: MutationResolvers['hardDeleteUser'] = async (
   const teamIds = teamMemberIds.map((id) => TeamMemberId.split(id).teamId)
 
   // need to fetch these upfront
-  const [
-    onePersonMeetingIds,
-    retroReflectionIds,
-    swapFacilitatorUpdates,
-    swapCreatedByUserUpdates,
-    discussions
-  ] = await Promise.all([
-    (
-      r
-        .table('MeetingMember')
-        .getAll(r.args(meetingIds), {index: 'meetingId'})
-        .group('meetingId') as any
-    )
-      .count()
-      .ungroup()
-      .filter((row: RValue) => row('reduction').le(1))
-      .map((row: RValue) => row('group'))
-      .coerceTo('array')
-      .run(),
-    (
+  const [onePersonMeetingIds, swapFacilitatorUpdates, swapCreatedByUserUpdates, discussions] =
+    await Promise.all([
+      (
+        r
+          .table('MeetingMember')
+          .getAll(r.args(meetingIds), {index: 'meetingId'})
+          .group('meetingId') as any
+      )
+        .count()
+        .ungroup()
+        .filter((row: RValue) => row('reduction').le(1))
+        .map((row: RValue) => row('group'))
+        .coerceTo('array')
+        .run(),
       r
         .table('NewMeeting')
         .getAll(r.args(teamIds), {index: 'teamId'})
-        .filter((row: RValue) => row('meetingType').eq('retro'))
-        .eqJoin('id', r.table('RetroReflection'), {index: 'meetingId'})
-        .zip() as any
-    )
-      .filter((row: RValue) => row('creatorId').eq(userIdToDelete))
-      .getField('id')
-      .coerceTo('array')
-      .distinct()
-      .run(),
-    r
-      .table('NewMeeting')
-      .getAll(r.args(teamIds), {index: 'teamId'})
-      .filter((row: RValue) => row('facilitatorUserId').eq(userIdToDelete))
-      .merge((meeting: RValue) => ({
-        otherTeamMember: r
-          .table('TeamMember')
-          .getAll(meeting('teamId'), {index: 'teamId'})
-          .filter((row: RValue) => row('userId').ne(userIdToDelete))
-          .nth(0)
-          .getField('userId')
-          .default(null)
-      }))
-      .filter(r.row.hasFields('otherTeamMember'))
-      .pluck('id', 'otherTeamMember')
-      .run(),
-    r
-      .table('NewMeeting')
-      .getAll(r.args(teamIds), {index: 'teamId'})
-      .filter((row: RValue) => row('createdBy').eq(userIdToDelete))
-      .merge((meeting: RValue) => ({
-        otherTeamMember: r
-          .table('TeamMember')
-          .getAll(meeting('teamId'), {index: 'teamId'})
-          .filter((row: RValue) => row('userId').ne(userIdToDelete))
-          .nth(0)
-          .getField('userId')
-          .default(null)
-      }))
-      .filter(r.row.hasFields('otherTeamMember'))
-      .pluck('id', 'otherTeamMember')
-      .run(),
-    pg.query(`SELECT "id" FROM "Discussion" WHERE "teamId" = ANY ($1);`, [teamIds])
-  ])
+        .filter((row: RValue) => row('facilitatorUserId').eq(userIdToDelete))
+        .merge((meeting: RValue) => ({
+          otherTeamMember: r
+            .table('TeamMember')
+            .getAll(meeting('teamId'), {index: 'teamId'})
+            .filter((row: RValue) => row('userId').ne(userIdToDelete))
+            .nth(0)
+            .getField('userId')
+            .default(null)
+        }))
+        .filter(r.row.hasFields('otherTeamMember'))
+        .pluck('id', 'otherTeamMember')
+        .run(),
+      r
+        .table('NewMeeting')
+        .getAll(r.args(teamIds), {index: 'teamId'})
+        .filter((row: RValue) => row('createdBy').eq(userIdToDelete))
+        .merge((meeting: RValue) => ({
+          otherTeamMember: r
+            .table('TeamMember')
+            .getAll(meeting('teamId'), {index: 'teamId'})
+            .filter((row: RValue) => row('userId').ne(userIdToDelete))
+            .nth(0)
+            .getField('userId')
+            .default(null)
+        }))
+        .filter(r.row.hasFields('otherTeamMember'))
+        .pluck('id', 'otherTeamMember')
+        .run(),
+      pg.query(`SELECT "id" FROM "Discussion" WHERE "teamId" = ANY ($1);`, [teamIds])
+    ])
   const teamDiscussionIds = discussions.rows.map(({id}) => id)
 
   // soft delete first for side effects
@@ -135,22 +117,12 @@ const hardDeleteUser: MutationResolvers['hardDeleteUser'] = async (
       .getAll(r.args(teamIds), {index: 'teamId'})
       .filter((row: RValue) => row('createdBy').eq(userIdToDelete))
       .delete(),
-    timelineEvent: r
-      .table('TimelineEvent')
-      .between([userIdToDelete, r.minval], [userIdToDelete, r.maxval], {
-        index: 'userIdCreatedAt'
-      })
-      .delete(),
     agendaItem: r
       .table('AgendaItem')
       .getAll(r.args(teamIds), {index: 'teamId'})
       .filter((row: RValue) => r(teamMemberIds).contains(row('teamMemberId')))
       .delete(),
     pushInvitation: r.table('PushInvitation').getAll(userIdToDelete, {index: 'userId'}).delete(),
-    retroReflection: r
-      .table('RetroReflection')
-      .getAll(r.args(retroReflectionIds), {index: 'id'})
-      .update({creatorId: tombstoneId}),
     slackNotification: r
       .table('SlackNotification')
       .getAll(userIdToDelete, {index: 'userId'})
@@ -196,6 +168,7 @@ const hardDeleteUser: MutationResolvers['hardDeleteUser'] = async (
   }).run()
 
   // now postgres, after FKs are added then triggers should take care of children
+  // TODO when we're done migrating to PG, these should have constraints that ON DELETE CASCADE
   await Promise.all([
     pg.query(`DELETE FROM "AtlassianAuth" WHERE "userId" = $1`, [userIdToDelete]),
     pg.query(`DELETE FROM "GitHubAuth" WHERE "userId" = $1`, [userIdToDelete]),
@@ -210,7 +183,7 @@ const hardDeleteUser: MutationResolvers['hardDeleteUser'] = async (
   ])
 
   // Send metrics to HubSpot before the user is really deleted in DB
-  await sendAccountRemovedToSegment(userIdToDelete, user.email, reasonText ?? '')
+  await sendAccountRemovedEvent(userIdToDelete, user.email, reasonText ?? '')
 
   // User needs to be deleted after children
   await pg.query(`DELETE FROM "User" WHERE "id" = $1`, [userIdToDelete])

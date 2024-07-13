@@ -7,7 +7,6 @@ import {isSuperUser} from '../../../utils/authorization'
 import publish from '../../../utils/publish'
 import {getStripeManager} from '../../../utils/stripe'
 import {MutationResolvers} from '../resolverTypes'
-import updateTeamByOrgId from '../../../postgres/queries/updateTeamByOrgId'
 
 export type StripeFailPaymentPayloadSource =
   | {
@@ -75,16 +74,12 @@ const stripeFailPayment: MutationResolvers['stripeFailPayment'] = async (
     // After 23 hours subscription updates to incomplete_expired and the invoice becomes void.
     // Not to handle this particular case in 23 hours, we do it now
     await terminateSubscription(orgId)
-  } else {
-    // Keep subscription, but disable teams
-    await updateTeamByOrgId({isPaid: false}, orgId)
   }
-
-  const billingLeaderUserIds = (await r
-    .table('OrganizationUser')
-    .getAll(orgId, {index: 'orgId'})
-    .filter({removedAt: null, role: 'BILLING_LEADER'})('userId')
-    .run()) as string[]
+  const orgUsers = await dataLoader.get('organizationUsersByOrgId').load(orgId)
+  const billingLeaderOrgUsers = orgUsers.filter(
+    ({role}) => role && ['BILLING_LEADER', 'ORG_ADMIN'].includes(role)
+  )
+  const billingLeaderUserIds = billingLeaderOrgUsers.map(({userId}) => userId)
 
   const {default_source} = customer
 

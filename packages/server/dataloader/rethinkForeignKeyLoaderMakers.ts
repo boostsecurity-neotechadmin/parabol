@@ -1,5 +1,3 @@
-import TimelineEventCheckinComplete from 'parabol-server/database/types/TimelineEventCheckinComplete'
-import TimelineEventRetroComplete from 'parabol-server/database/types/TimelineEventRetroComplete'
 import getRethink from '../database/rethinkDriver'
 import {RDatum} from '../database/stricterR'
 import RethinkForeignKeyLoaderMaker from './RethinkForeignKeyLoaderMaker'
@@ -118,14 +116,6 @@ export const meetingMembersByUserId = new RethinkForeignKeyLoaderMaker(
   }
 )
 
-export const organizationsByActiveDomain = new RethinkForeignKeyLoaderMaker(
-  'organizations',
-  'activeDomain',
-  async (activeDomains) => {
-    const r = await getRethink()
-    return r.table('Organization').getAll(r.args(activeDomains), {index: 'activeDomain'}).run()
-  }
-)
 export const organizationUsersByOrgId = new RethinkForeignKeyLoaderMaker(
   'organizationUsers',
   'orgId',
@@ -152,19 +142,6 @@ export const organizationUsersByUserId = new RethinkForeignKeyLoaderMaker(
   }
 )
 
-export const retroReflectionGroupsByMeetingId = new RethinkForeignKeyLoaderMaker(
-  'retroReflectionGroups',
-  'meetingId',
-  async (meetingIds) => {
-    const r = await getRethink()
-    return r
-      .table('RetroReflectionGroup')
-      .getAll(r.args(meetingIds), {index: 'meetingId'})
-      .filter({isActive: true})
-      .run()
-  }
-)
-
 export const scalesByTeamId = new RethinkForeignKeyLoaderMaker(
   'templateScales',
   'teamId',
@@ -175,19 +152,6 @@ export const scalesByTeamId = new RethinkForeignKeyLoaderMaker(
       .getAll(r.args(teamIds), {index: 'teamId'})
       .filter((row: RDatum) => row('removedAt').default(null).eq(null))
       .orderBy('sortOrder')
-      .run()
-  }
-)
-
-export const retroReflectionsByMeetingId = new RethinkForeignKeyLoaderMaker(
-  'retroReflections',
-  'meetingId',
-  async (meetingIds) => {
-    const r = await getRethink()
-    return r
-      .table('RetroReflection')
-      .getAll(r.args(meetingIds), {index: 'meetingId'})
-      .filter({isActive: true})
       .run()
   }
 )
@@ -206,18 +170,6 @@ export const templateDimensionsByTemplateId = new RethinkForeignKeyLoaderMaker(
         .orderBy('sortOrder')
         .run()
     )
-  }
-)
-export const timelineEventsByMeetingId = new RethinkForeignKeyLoaderMaker(
-  'timelineEvents',
-  'meetingId',
-  async (meetingIds) => {
-    const r = await getRethink()
-    return r
-      .table('TimelineEvent')
-      .getAll(r.args(meetingIds), {index: 'meetingId'})
-      .filter({isActive: true})
-      .run() as Promise<TimelineEventCheckinComplete[] | TimelineEventRetroComplete[]>
   }
 )
 

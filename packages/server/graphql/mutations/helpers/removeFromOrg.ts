@@ -1,8 +1,11 @@
+import {sql} from 'kysely'
 import {InvoiceItemType} from 'parabol-client/types/constEnums'
 import adjustUserCount from '../../../billing/helpers/adjustUserCount'
 import getRethink from '../../../database/rethinkDriver'
 import OrganizationUser from '../../../database/types/OrganizationUser'
+import getKysely from '../../../postgres/getKysely'
 import getTeamsByOrgIds from '../../../postgres/queries/getTeamsByOrgIds'
+import {Logger} from '../../../utils/Logger'
 import setUserTierForUserIds from '../../../utils/setUserTierForUserIds'
 import {DataLoaderWorker} from '../../graphql'
 import removeTeamMember from './removeTeamMember'
@@ -15,6 +18,7 @@ const removeFromOrg = async (
   dataLoader: DataLoaderWorker
 ) => {
   const r = await getRethink()
+  const pg = getKysely()
   const now = new Date()
   const orgTeams = await getTeamsByOrgIds([orgId])
   const teamIds = orgTeams.map((team) => team.id)
@@ -40,42 +44,45 @@ const removeFromOrg = async (
     return arr
   }, [])
 
-  const [organizationUser, user] = await Promise.all([
+  const [_pgOrgUser, organizationUser, user] = await Promise.all([
+    pg
+      .updateTable('OrganizationUser')
+      .set({removedAt: sql`CURRENT_TIMESTAMP`})
+      .where('userId', '=', userId)
+      .where('orgId', '=', orgId)
+      .where('removedAt', 'is', null)
+      .returning('role')
+      .executeTakeFirstOrThrow(),
     r
       .table('OrganizationUser')
       .getAll(userId, {index: 'userId'})
       .filter({orgId, removedAt: null})
       .nth(0)
-      .update(
-        {removedAt: now},
-        {returnChanges: true}
-      )('changes')(0)('new_val')
+      .update({removedAt: now}, {returnChanges: true})('changes')(0)('new_val')
       .default(null)
       .run() as unknown as OrganizationUser,
-    dataLoader.get('users').load(userId)
+    dataLoader.get('users').loadNonNull(userId)
   ])
 
   // need to make sure the org doc is updated before adjusting this
   const {role} = organizationUser
-  if (role === 'BILLING_LEADER') {
-    const organization = await r.table('Organization').get(orgId).run()
+  if (role && ['BILLING_LEADER', 'ORG_ADMIN'].includes(role)) {
+    const organization = await dataLoader.get('organizations').loadNonNull(orgId)
     // if no other billing leader, promote the oldest
     // if team tier & no other member, downgrade to starter
-    const otherBillingLeaders = await r
-      .table('OrganizationUser')
-      .getAll(orgId, {index: 'orgId'})
-      .filter({removedAt: null, role: 'BILLING_LEADER'})
-      .run()
+    const allOrgUsers = await dataLoader.get('organizationUsersByOrgId').load(orgId)
+    const otherBillingLeaders = allOrgUsers.filter(
+      ({role}) => role && ['BILLING_LEADER', 'ORG_ADMIN'].includes(role)
+    )
     if (otherBillingLeaders.length === 0) {
-      const nextInLine = await r
-        .table('OrganizationUser')
-        .getAll(orgId, {index: 'orgId'})
-        .filter({removedAt: null})
-        .orderBy('joinedAt')
-        .nth(0)
-        .default(null)
-        .run()
+      const orgUsersByJoinAt = allOrgUsers.sort((a, b) => (a.joinedAt < b.joinedAt ? -1 : 1))
+      const nextInLine = orgUsersByJoinAt[0]
       if (nextInLine) {
+        await pg
+          .updateTable('OrganizationUser')
+          .set({role: 'BILLING_LEADER'})
+          .where('id', '=', nextInLine.id)
+          .execute()
         await r
           .table('OrganizationUser')
           .get(nextInLine.id)
@@ -84,14 +91,14 @@ const removeFromOrg = async (
           })
           .run()
       } else if (organization.tier !== 'starter') {
-        await resolveDowngradeToStarter(orgId, organization.stripeSubscriptionId!, userId)
+        await resolveDowngradeToStarter(orgId, organization.stripeSubscriptionId!, user, dataLoader)
       }
     }
   }
   try {
-    await adjustUserCount(userId, orgId, InvoiceItemType.REMOVE_USER)
+    await adjustUserCount(userId, orgId, InvoiceItemType.REMOVE_USER, dataLoader)
   } catch (e) {
-    console.log(e)
+    Logger.log(e)
   }
   await setUserTierForUserIds([userId])
   return {

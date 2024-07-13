@@ -2,16 +2,26 @@ import styled from '@emotion/styled'
 import graphql from 'babel-plugin-relay/macro'
 import React from 'react'
 import {commitLocalUpdate, useFragment} from 'react-relay'
-import useAtmosphere from '~/hooks/useAtmosphere'
 import {TeamPromptDrawer_meeting$key} from '~/__generated__/TeamPromptDrawer_meeting.graphql'
+import useAtmosphere from '~/hooks/useAtmosphere'
+import useBreakpoint from '../../hooks/useBreakpoint'
 import {desktopSidebarShadow} from '../../styles/elevation'
-import {BezierCurve, Breakpoint, DiscussionThreadEnum, ZIndex} from '../../types/constEnums'
+import {
+  BezierCurve,
+  Breakpoint,
+  DiscussionThreadEnum,
+  GlobalBanner,
+  ZIndex
+} from '../../types/constEnums'
+import SendClientSideEvent from '../../utils/SendClientSideEvent'
+import findStageById from '../../utils/meetings/findStageById'
 import ResponsiveDashSidebar from '../ResponsiveDashSidebar'
 import TeamPromptDiscussionDrawer from './TeamPromptDiscussionDrawer'
-import TeamPromptWorkDrawerRoot from './TeamPromptWorkDrawerRoot'
-import useBreakpoint from '../../hooks/useBreakpoint'
+import TeamPromptWorkDrawer from './TeamPromptWorkDrawer'
 
-const Drawer = styled('div')<{isDesktop: boolean; isMobile: boolean; isOpen: boolean}>(
+const isGlobalBannerEnabled = window.__ACTION__.GLOBAL_BANNER_ENABLED
+
+export const Drawer = styled('div')<{isDesktop: boolean; isMobile: boolean; isOpen: boolean}>(
   ({isDesktop, isMobile, isOpen}) => ({
     boxShadow: isDesktop ? desktopSidebarShadow : undefined,
     backgroundColor: '#FFFFFF',
@@ -20,6 +30,7 @@ const Drawer = styled('div')<{isDesktop: boolean; isMobile: boolean; isOpen: boo
     flexDirection: 'column',
     justifyContent: 'stretch',
     overflow: 'hidden',
+    paddingTop: isGlobalBannerEnabled ? GlobalBanner.HEIGHT : 0,
     position: isDesktop ? 'fixed' : 'static',
     bottom: 0,
     top: 0,
@@ -54,7 +65,20 @@ const TeamPromptDrawer = ({meetingRef, isDesktop}: Props) => {
         ...TeamPromptDiscussionDrawer_meeting
         ...TeamPromptWorkDrawer_meeting
         id
+        teamId
         isRightDrawerOpen
+        localStageId
+        phases {
+          stages {
+            id
+            ... on TeamPromptResponseStage {
+              discussionId
+              teamMember {
+                id
+              }
+            }
+          }
+        }
       }
     `,
     meetingRef
@@ -64,22 +88,40 @@ const TeamPromptDrawer = ({meetingRef, isDesktop}: Props) => {
   const atmosphere = useAtmosphere()
   const {id: meetingId, isRightDrawerOpen} = meeting
 
-  const onToggleDrawer = () => {
-    commitLocalUpdate(atmosphere, (store) => {
-      const meeting = store.get(meetingId)
-      if (!meeting) return
-      const isRightDrawerOpen = meeting.getValue('isRightDrawerOpen')
-      meeting.setValue(!isRightDrawerOpen, 'isRightDrawerOpen')
-    })
+  const shouldRenderDiscussionDrawer = () => {
+    const {localStageId} = meeting
+    if (!localStageId) return false
+
+    const stage = findStageById(meeting.phases, localStageId)
+    if (!stage) return false
+
+    const {discussionId, teamMember} = stage.stage
+    if (!discussionId || !teamMember) return false
+
+    return true
   }
 
-  // Render the discussion thread if it can be rendered, otherwise fall back on the work sidebar.
-  // :TRICKY: Elements rendered with JSX never return null, so we need to render both possible
-  // internal drawers via function calls in order to nullish coalesce. We also have to call both
-  // every time for the React hooks to be consistent.
-  const renderedDiscussionDrawer = TeamPromptDiscussionDrawer({meetingRef: meeting, onToggleDrawer})
-  const renderedWorkDrawer = TeamPromptWorkDrawerRoot({meetingRef: meeting, onToggleDrawer})
-  const renderedInnerDrawer = renderedDiscussionDrawer ?? renderedWorkDrawer
+  const onToggleDrawer = () => {
+    commitLocalUpdate(atmosphere, (store) => {
+      const meetingProxy = store.get(meetingId)
+      if (!meetingProxy) return
+      const isRightDrawerOpen = meetingProxy.getValue('isRightDrawerOpen')
+
+      if (!shouldRenderDiscussionDrawer()) {
+        SendClientSideEvent(
+          atmosphere,
+          isRightDrawerOpen ? 'Your Work Drawer Closed' : 'Your Work Drawer Opened',
+          {
+            teamId: meeting.teamId,
+            meetingId: meeting.id,
+            source: 'drawer'
+          }
+        )
+      }
+
+      meetingProxy.setValue(!isRightDrawerOpen, 'isRightDrawerOpen')
+    })
+  }
 
   return (
     <ResponsiveDashSidebar
@@ -89,7 +131,11 @@ const TeamPromptDrawer = ({meetingRef, isDesktop}: Props) => {
       sidebarWidth={DiscussionThreadEnum.WIDTH}
     >
       <Drawer isDesktop={isDesktop} isMobile={isMobile} isOpen={isRightDrawerOpen}>
-        {renderedInnerDrawer}
+        {shouldRenderDiscussionDrawer() ? (
+          <TeamPromptDiscussionDrawer meetingRef={meeting} onToggleDrawer={onToggleDrawer} />
+        ) : (
+          <TeamPromptWorkDrawer meetingRef={meeting} onToggleDrawer={onToggleDrawer} />
+        )}
       </Drawer>
     </ResponsiveDashSidebar>
   )

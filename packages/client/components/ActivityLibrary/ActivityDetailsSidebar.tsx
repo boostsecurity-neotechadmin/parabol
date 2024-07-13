@@ -1,50 +1,43 @@
-import {LockOpen} from '@mui/icons-material'
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown'
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp'
 import graphql from 'babel-plugin-relay/macro'
 import clsx from 'clsx'
-import React, {useState} from 'react'
+import React, {useEffect, useRef, useState} from 'react'
 import {useFragment} from 'react-relay'
-import StartSprintPokerMutation from '~/mutations/StartSprintPokerMutation'
 import {useHistory} from 'react-router'
-import StartRetrospectiveMutation from '~/mutations/StartRetrospectiveMutation'
-import UpdateReflectTemplateScopeMutation from '~/mutations/UpdateReflectTemplateScopeMutation'
-import {ActivityDetailsSidebar_template$key} from '~/__generated__/ActivityDetailsSidebar_template.graphql'
-import {ActivityDetailsSidebar_viewer$key} from '~/__generated__/ActivityDetailsSidebar_viewer.graphql'
+import {RRule} from 'rrule'
 import {ActivityDetailsSidebar_teams$key} from '~/__generated__/ActivityDetailsSidebar_teams.graphql'
+import {ActivityDetailsSidebar_template$key} from '~/__generated__/ActivityDetailsSidebar_template.graphql'
+import StartRetrospectiveMutation from '~/mutations/StartRetrospectiveMutation'
+import StartSprintPokerMutation from '~/mutations/StartSprintPokerMutation'
+import UpdateReflectTemplateScopeMutation from '~/mutations/UpdateReflectTemplateScopeMutation'
+import {MeetingTypeEnum} from '../../__generated__/ActivityDetailsQuery.graphql'
+import {CreateGcalEventInput} from '../../__generated__/StartRetrospectiveMutation.graphql'
 import useAtmosphere from '../../hooks/useAtmosphere'
-import {MenuPosition} from '../../hooks/useCoords'
 import useMutationProps from '../../hooks/useMutationProps'
 import SelectTemplateMutation from '../../mutations/SelectTemplateMutation'
-import SendClientSegmentEventMutation from '../../mutations/SendClientSegmentEventMutation'
 import StartCheckInMutation from '../../mutations/StartCheckInMutation'
 import StartTeamPromptMutation from '../../mutations/StartTeamPromptMutation'
-import {PALETTE} from '../../styles/paletteV3'
-import {CreateGcalEventInput} from '../../__generated__/StartRetrospectiveMutation.graphql'
 import sortByTier from '../../utils/sortByTier'
-import {MeetingTypeEnum} from '../../__generated__/ActivityDetailsQuery.graphql'
-import {RecurrenceSettings} from '../TeamPrompt/Recurrence/RecurrenceSettings'
-import NewMeetingSettingsToggleAnonymity from '../NewMeetingSettingsToggleAnonymity'
-import NewMeetingSettingsToggleTeamHealth from '../NewMeetingSettingsToggleTeamHealth'
-import NewMeetingSettingsToggleCheckIn from '../NewMeetingSettingsToggleCheckIn'
-import StyledError from '../StyledError'
 import FlatPrimaryButton from '../FlatPrimaryButton'
 import NewMeetingActionsCurrentMeetings from '../NewMeetingActionsCurrentMeetings'
-import RaisedButton from '../RaisedButton'
+import NewMeetingSettingsToggleAnonymity from '../NewMeetingSettingsToggleAnonymity'
+import NewMeetingSettingsToggleCheckIn from '../NewMeetingSettingsToggleCheckIn'
+import NewMeetingSettingsToggleTeamHealth from '../NewMeetingSettingsToggleTeamHealth'
 import NewMeetingTeamPicker from '../NewMeetingTeamPicker'
-import {ActivityDetailsRecurrenceSettings} from './ActivityDetailsRecurrenceSettings'
-import {AdhocTeamMultiSelect, Option} from '../AdhocTeamMultiSelect/AdhocTeamMultiSelect'
+import StyledError from '../StyledError'
 import ScheduleMeetingButton from './ScheduleMeetingButton'
 
 interface Props {
   selectedTemplateRef: ActivityDetailsSidebar_template$key
   teamsRef: ActivityDetailsSidebar_teams$key
   type: MeetingTypeEnum
-  isOpen: boolean
   preferredTeamId: string | null
-  viewerRef: ActivityDetailsSidebar_viewer$key
 }
 
 const ActivityDetailsSidebar = (props: Props) => {
-  const {selectedTemplateRef, teamsRef, type, isOpen, preferredTeamId, viewerRef} = props
+  const {selectedTemplateRef, teamsRef, type, preferredTeamId} = props
+  const [isMinimized, setIsMinimized] = useState(false)
   const selectedTemplate = useFragment(
     graphql`
       fragment ActivityDetailsSidebar_template on MeetingTemplate {
@@ -53,23 +46,9 @@ const ActivityDetailsSidebar = (props: Props) => {
         teamId
         orgId
         scope
-        isFree
       }
     `,
     selectedTemplateRef
-  )
-
-  const viewer = useFragment(
-    graphql`
-      fragment ActivityDetailsSidebar_viewer on User {
-        featureFlags {
-          gcal
-        }
-        ...AdhocTeamMultiSelect_viewer
-        ...ScheduleMeetingButton_viewer
-      }
-    `,
-    viewerRef
   )
 
   const teams = useFragment(
@@ -80,9 +59,6 @@ const ActivityDetailsSidebar = (props: Props) => {
         name
         tier
         orgId
-        organization {
-          name
-        }
         retroSettings: meetingSettings(meetingType: retrospective) {
           ...NewMeetingSettingsToggleCheckIn_settings
           ...NewMeetingSettingsToggleTeamHealth_settings
@@ -99,26 +75,28 @@ const ActivityDetailsSidebar = (props: Props) => {
         ...NewMeetingTeamPicker_teams
         ...NewMeetingActionsCurrentMeetings_team
         ...ScheduleMeetingButton_team
+        ...ScheduleDialog_team
       }
     `,
     teamsRef
   )
 
   const atmosphere = useAtmosphere()
-  const [recurrenceSettings, setRecurrenceSettings] = useState<RecurrenceSettings>({
-    name: '',
-    rrule: null
-  })
-
   const templateTeam = teams.find((team) => team.id === selectedTemplate.teamId)
 
   const availableTeams =
     selectedTemplate.scope === 'PUBLIC'
       ? teams
       : selectedTemplate.scope === 'ORGANIZATION'
-      ? teams.filter((team) => team.orgId === selectedTemplate.orgId)
-      : // it is a team-scoped template, templateTeam  must exist
-        [templateTeam!]
+        ? teams.filter((team) => team.orgId === selectedTemplate.orgId)
+        : // it is a team-scoped template, templateTeam  must exist
+          [templateTeam!]
+
+  const availableTeamsRef = useRef(availableTeams)
+
+  useEffect(() => {
+    availableTeamsRef.current = availableTeams
+  }, [availableTeams])
 
   const [selectedTeam, setSelectedTeam] = useState(
     () =>
@@ -126,21 +104,17 @@ const ActivityDetailsSidebar = (props: Props) => {
       templateTeam ??
       sortByTier(availableTeams)[0]!
   )
+
+  const onSelectTeam = (teamId: string) => {
+    const currentAvailableTeams = availableTeamsRef.current
+    const newTeam = currentAvailableTeams.find((team) => team.id === teamId)
+    newTeam && setSelectedTeam(newTeam)
+  }
   const mutationProps = useMutationProps()
   const {onError, onCompleted, submitting, submitMutation, error} = mutationProps
   const history = useHistory()
 
-  const [selectedUsers, setSelectedUsers] = React.useState<Option[]>([])
-
-  const oneOnOneTeamInput = selectedUsers[0]
-    ? {
-        email: selectedUsers[0].email,
-        // TODO: always pick default orgId for now, this will be changed in next PRs
-        orgId: selectedTeam.orgId
-      }
-    : null
-
-  const handleStartActivity = (gcalInput?: CreateGcalEventInput) => {
+  const handleStartActivity = (name?: string, rrule?: RRule, gcalInput?: CreateGcalEventInput) => {
     if (submitting) return
     submitMutation()
     if (type === 'teamPrompt') {
@@ -148,20 +122,19 @@ const ActivityDetailsSidebar = (props: Props) => {
         atmosphere,
         {
           teamId: selectedTeam.id,
-          recurrenceSettings: {
-            rrule: recurrenceSettings.rrule?.toString(),
-            name: recurrenceSettings.name
-          },
+          name,
+          rrule: rrule?.toString(),
           gcalInput
         },
         {history, onError, onCompleted}
       )
     } else if (type === 'action') {
-      StartCheckInMutation(
-        atmosphere,
-        {teamId: !oneOnOneTeamInput ? selectedTeam.id : null, oneOnOneTeamInput, gcalInput},
-        {history, onError, onCompleted}
-      )
+      const variables = {
+        teamId: selectedTeam.id,
+        gcalInput
+      }
+
+      StartCheckInMutation(atmosphere, variables, {history, onError, onCompleted})
     } else {
       SelectTemplateMutation(
         atmosphere,
@@ -171,7 +144,12 @@ const ActivityDetailsSidebar = (props: Props) => {
             if (type === 'retrospective') {
               StartRetrospectiveMutation(
                 atmosphere,
-                {teamId: selectedTeam.id, gcalInput},
+                {
+                  teamId: selectedTeam.id,
+                  name,
+                  rrule: rrule?.toString(),
+                  gcalInput
+                },
                 {history, onError, onCompleted}
               )
             } else if (type === 'poker') {
@@ -188,98 +166,59 @@ const ActivityDetailsSidebar = (props: Props) => {
     }
   }
 
-  const handleShareToOrg = () => {
-    selectedTemplate &&
-      UpdateReflectTemplateScopeMutation(
-        atmosphere,
-        {scope: 'ORGANIZATION', templateId: selectedTemplate.id},
-        {onError, onCompleted}
-      )
-  }
-
-  const teamScopePopover = templateTeam && selectedTemplate.scope === 'TEAM' && (
-    <div className='w-[352px] p-4'>
-      <div>
-        This custom activity is private to the <b>{templateTeam.name}</b> team.
-      </div>
-      <br />
-      <div>
-        As a member of the team you can share this activity with other teams at the{' '}
-        <b>{templateTeam.organization.name}</b> organization so that they can also use the activity.
-      </div>
-      <button
-        onClick={handleShareToOrg}
-        className={
-          'mt-4 flex w-max cursor-pointer items-center rounded-full border border-solid border-slate-400 bg-white px-3 py-2 text-center font-sans text-sm font-semibold text-slate-700 hover:bg-slate-100'
+  const handleShareToOrg =
+    templateTeam && selectedTemplate.scope === 'TEAM'
+      ? () => {
+          selectedTemplate &&
+            UpdateReflectTemplateScopeMutation(
+              atmosphere,
+              {scope: 'ORGANIZATION', templateId: selectedTemplate.id},
+              {onError, onCompleted}
+            )
         }
-      >
-        <LockOpen style={{marginRight: '8px', color: PALETTE.SLATE_600}} />
-        Allow other teams to use this activity
-      </button>
-    </div>
-  )
+      : undefined
 
-  const handleUpgrade = () => {
-    SendClientSegmentEventMutation(atmosphere, 'Upgrade CTA Clicked', {
-      upgradeCTALocation: 'publicTemplate',
-      meetingType: type
-    })
-    history.push(`/me/organizations/${selectedTeam.orgId}/billing`)
-  }
+  const meetingNamePlaceholder =
+    type === 'retrospective'
+      ? 'Retro'
+      : type === 'teamPrompt'
+        ? 'Standup'
+        : type === 'poker'
+          ? 'Poker'
+          : type === 'action'
+            ? 'Check-in'
+            : 'Meeting'
+  const withRecurrence = type === 'teamPrompt' || type === 'retrospective'
 
   return (
     <>
-      {isOpen && <div className='w-96' />}
-      <div
-        className={clsx(
-          'fixed right-0 flex h-screen translate-x-0 flex-col border-l border-solid border-slate-300 px-4 pb-9 pt-14 transition-all',
-          isOpen ? ' w-96' : 'w-0 overflow-hidden opacity-0'
-        )}
-      >
-        <div className='mb-6 text-xl font-semibold'>Settings</div>
+      <div className='sticky bottom-0 flex w-full flex-col border-t border-solid border-slate-300 bg-white px-4 pt-2 lg:right-0 lg:top-0 lg:h-full lg:w-96 lg:flex-1 lg:border-l lg:pt-14'>
+        <div className='flex-grow'>
+          <div className='flex items-center justify-between pt-2 text-xl font-semibold lg:pt-0'>
+            Settings
+            <span
+              className='hover:cursor-pointer lg:hidden'
+              onClick={() => setIsMinimized(!isMinimized)}
+            >
+              {isMinimized ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
+            </span>
+          </div>
 
-        <div className='flex grow flex-col gap-2'>
-          {selectedTemplate.id === 'oneOnOneAction' ? (
-            <div className='rounded-lg bg-slate-200 p-3'>
-              <div className='text-gray-700 pb-3 text-lg font-semibold'>Teammate</div>
-              <AdhocTeamMultiSelect
-                viewerRef={viewer}
-                onChange={(newUsers: Option[]) => {
-                  setSelectedUsers(newUsers)
-                }}
-                value={selectedUsers}
-                multiple={false}
+          <div
+            className={clsx(
+              'transition-max-height duration-300 ease-in-out',
+              isMinimized
+                ? 'max-h-0 opacity-0 lg:max-h-[100vh] lg:opacity-100'
+                : 'max-h-[100vh] pb-4 lg:pb-0'
+            )}
+          >
+            <div className='mt-6 flex grow flex-col gap-2'>
+              <NewMeetingTeamPicker
+                onSelectTeam={onSelectTeam}
+                selectedTeamRef={selectedTeam}
+                teamsRef={availableTeams}
+                onShareToOrg={handleShareToOrg}
               />
-            </div>
-          ) : (
-            <NewMeetingTeamPicker
-              positionOverride={MenuPosition.UPPER_LEFT}
-              onSelectTeam={(teamId) => {
-                const newTeam = availableTeams.find((team) => team.id === teamId)
-                newTeam && setSelectedTeam(newTeam)
-              }}
-              selectedTeamRef={selectedTeam}
-              teamsRef={availableTeams}
-              customPortal={teamScopePopover}
-            />
-          )}
-
-          {selectedTeam.tier === 'starter' && !selectedTemplate.isFree ? (
-            <div className='flex grow flex-col'>
-              <div className='my-auto text-center'>
-                Upgrade to the <b>Team Plan</b> to create custom activities unlocking your team’s
-                ideal workflow.
-              </div>
-              <RaisedButton
-                palette='pink'
-                className='h-12 w-full text-lg font-semibold text-white focus:outline-none focus:ring-2 focus:ring-offset-2'
-                onClick={handleUpgrade}
-              >
-                Upgrade to Team Plan
-              </RaisedButton>
-            </div>
-          ) : (
-            <>
               {type === 'retrospective' && (
                 <>
                   <NewMeetingSettingsToggleCheckIn settingsRef={selectedTeam.retroSettings} />
@@ -296,31 +235,27 @@ const ActivityDetailsSidebar = (props: Props) => {
               {type === 'action' && (
                 <NewMeetingSettingsToggleCheckIn settingsRef={selectedTeam.actionSettings} />
               )}
-              {type === 'teamPrompt' && (
-                <ActivityDetailsRecurrenceSettings
-                  onRecurrenceSettingsUpdated={setRecurrenceSettings}
-                  recurrenceSettings={recurrenceSettings}
-                />
-              )}
-              <div className='flex grow flex-col justify-end gap-2'>
-                {error && <StyledError>{error.message}</StyledError>}
-                <NewMeetingActionsCurrentMeetings team={selectedTeam} />
-                <ScheduleMeetingButton
-                  handleStartActivity={handleStartActivity}
-                  mutationProps={mutationProps}
-                  teamRef={selectedTeam}
-                  viewerRef={viewer}
-                />
-                <FlatPrimaryButton
-                  onClick={() => handleStartActivity()}
-                  waiting={submitting}
-                  className='h-14'
-                >
-                  <div className='text-lg'>Start Activity</div>
-                </FlatPrimaryButton>
-              </div>
-            </>
-          )}
+            </div>
+          </div>
+        </div>
+
+        <div className='z-10 flex h-fit w-full flex-col gap-2 pb-4'>
+          {error && <StyledError>{error.message}</StyledError>}
+          <NewMeetingActionsCurrentMeetings team={selectedTeam} />
+          <ScheduleMeetingButton
+            handleStartActivity={handleStartActivity}
+            mutationProps={mutationProps}
+            teamRef={selectedTeam}
+            placeholder={meetingNamePlaceholder}
+            withRecurrence={withRecurrence}
+          />
+          <FlatPrimaryButton
+            onClick={() => handleStartActivity()}
+            waiting={submitting}
+            className='h-14'
+          >
+            <div className='text-lg'>Start Activity</div>
+          </FlatPrimaryButton>
         </div>
       </div>
     </>

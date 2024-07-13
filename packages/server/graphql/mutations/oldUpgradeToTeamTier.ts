@@ -1,6 +1,7 @@
 import {GraphQLID, GraphQLNonNull} from 'graphql'
 import {SubscriptionChannel} from 'parabol-client/types/constEnums'
 import getRethink from '../../database/rethinkDriver'
+import getKysely from '../../postgres/getKysely'
 import {analytics} from '../../utils/analytics/analytics'
 import {getUserId} from '../../utils/authorization'
 import publish from '../../utils/publish'
@@ -42,7 +43,7 @@ export default {
       stripeSubscriptionId: startingSubId,
       name: orgName,
       activeDomain: domain
-    } = await r.table('Organization').get(orgId).run()
+    } = await dataLoader.get('organizations').loadNonNull(orgId)
 
     if (startingSubId) {
       return standardError(new Error('Already an organization on the team tier'), {
@@ -52,8 +53,8 @@ export default {
 
     // RESOLUTION
     // if they downgrade & are re-upgrading, they'll already have a stripeId
-    const viewer = await dataLoader.get('users').load(viewerId)
-    const {email} = viewer!
+    const viewer = await dataLoader.get('users').loadNonNull(viewerId)
+    const {email} = viewer
     try {
       await oldUpgradeToTeamTier(orgId, stripeToken, email, dataLoader)
     } catch (e) {
@@ -65,6 +66,13 @@ export default {
     const activeMeetings = await hideConversionModal(orgId, dataLoader)
     const meetingIds = activeMeetings.map(({id}) => id)
 
+    await getKysely()
+      .updateTable('OrganizationUser')
+      .set({role: 'BILLING_LEADER'})
+      .where('userId', '=', viewerId)
+      .where('orgId', '=', orgId)
+      .where('removedAt', 'is', null)
+      .execute()
     await r
       .table('OrganizationUser')
       .getAll(viewerId, {index: 'userId'})
@@ -74,9 +82,9 @@ export default {
 
     const teams = await dataLoader.get('teamsByOrgIds').load(orgId)
     const teamIds = teams.map(({id}) => id)
-    analytics.organizationUpgraded(viewerId, {
+    analytics.organizationUpgraded(viewer, {
       orgId,
-      domain,
+      domain: domain || undefined,
       orgName,
       oldTier: 'starter',
       newTier: 'team'

@@ -1,11 +1,10 @@
 import {MasterPool, r} from 'rethinkdb-ts'
-import Organization from '../database/types/Organization'
 import SlackAuth from '../database/types/SlackAuth'
 import SlackNotification from '../database/types/SlackNotification'
 import TeamInvitation from '../database/types/TeamInvitation'
 import TeamMember from '../database/types/TeamMember'
-import {ScheduledJobUnion} from '../graphql/private/mutations/runScheduledJobs'
 import {AnyMeeting, AnyMeetingSettings, AnyMeetingTeamMember} from '../postgres/types/Meeting'
+import {ScheduledJobUnion} from '../types/custom'
 import getRethinkConfig from './getRethinkConfig'
 import {R} from './stricterR'
 import AgendaItem from './types/AgendaItem'
@@ -18,28 +17,24 @@ import MassInvitation from './types/MassInvitation'
 import MeetingTemplate from './types/MeetingTemplate'
 import NotificationKickedOut from './types/NotificationKickedOut'
 import NotificationMeetingStageTimeLimitEnd from './types/NotificationMeetingStageTimeLimitEnd'
+import NotificationMentioned from './types/NotificationMentioned'
 import NotificationPaymentRejected from './types/NotificationPaymentRejected'
 import NotificationPromoteToBillingLeader from './types/NotificationPromoteToBillingLeader'
 import NotificationResponseMentioned from './types/NotificationResponseMentioned'
+import NotificationResponseReplied from './types/NotificationResponseReplied'
 import NotificationTaskInvolves from './types/NotificationTaskInvolves'
 import NotificationTeamArchived from './types/NotificationTeamArchived'
 import NotificationTeamInvitation from './types/NotificationTeamInvitation'
 import OrganizationUser from './types/OrganizationUser'
 import PasswordResetRequest from './types/PasswordResetRequest'
 import PushInvitation from './types/PushInvitation'
-import Reflection from './types/Reflection'
-import ReflectionGroup from './types/ReflectionGroup'
 import RetrospectivePrompt from './types/RetrospectivePrompt'
-import SAML from './types/SAML'
 import SuggestedActionCreateNewTeam from './types/SuggestedActionCreateNewTeam'
 import SuggestedActionInviteYourTeam from './types/SuggestedActionInviteYourTeam'
 import SuggestedActionTryTheDemo from './types/SuggestedActionTryTheDemo'
 import Task from './types/Task'
-import Team from './types/Team'
 import TemplateDimension from './types/TemplateDimension'
 import TemplateScale from './types/TemplateScale'
-import TimelineEvent from './types/TimelineEvent'
-import User from './types/User'
 
 export type RethinkSchema = {
   AgendaItem: {
@@ -113,11 +108,9 @@ export type RethinkSchema = {
       | NotificationPromoteToBillingLeader
       | NotificationTeamInvitation
       | NotificationResponseMentioned
+      | NotificationResponseReplied
+      | NotificationMentioned
     index: 'userId'
-  }
-  Organization: {
-    type: Organization
-    index: 'tier' | 'activeDomain'
   }
   OrganizationUser: {
     type: OrganizationUser
@@ -139,18 +132,6 @@ export type RethinkSchema = {
     type: MeetingTemplate
     index: 'teamId' | 'orgId'
   }
-  RetroReflectionGroup: {
-    type: ReflectionGroup
-    index: 'meetingId'
-  }
-  RetroReflection: {
-    type: Reflection
-    index: 'meetingId' | 'reflectionGroupId'
-  }
-  SAML: {
-    type: SAML
-    index: 'domains' | 'orgId'
-  }
   ScheduledJob: {
     type: ScheduledJobUnion
     index: 'runAt' | 'type'
@@ -167,7 +148,7 @@ export type RethinkSchema = {
     // tryRetroMeeting = 'tryRetroMeeting',
     // tryActionMeeting = 'tryActionMeeting'
     type: SuggestedActionCreateNewTeam | SuggestedActionInviteYourTeam | SuggestedActionTryTheDemo
-    index: 'userId'
+    index: 'userId' | 'teamId'
   }
   Task: {
     type: Task
@@ -184,10 +165,6 @@ export type RethinkSchema = {
     type: any
     index: 'taskIdUpdatedAt' | 'teamMemberId'
   }
-  Team: {
-    type: Team
-    index: 'orgId'
-  }
   TeamInvitation: {
     type: TeamInvitation
     index: 'email' | 'teamId' | 'token'
@@ -198,19 +175,11 @@ export type RethinkSchema = {
   }
   TemplateDimension: {
     type: TemplateDimension
-    index: 'teamId' | 'templateId'
+    index: 'teamId' | 'templateId' | 'scaleId'
   }
   TemplateScale: {
     type: TemplateScale
     index: 'teamId'
-  }
-  TimelineEvent: {
-    type: TimelineEvent
-    index: 'userIdCreatedAt' | 'meetingId'
-  }
-  User: {
-    type: User
-    index: 'email'
   }
 }
 

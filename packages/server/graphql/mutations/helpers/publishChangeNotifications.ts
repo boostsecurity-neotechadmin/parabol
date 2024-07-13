@@ -3,16 +3,16 @@ import getTypeFromEntityMap from 'parabol-client/utils/draftjs/getTypeFromEntity
 import getRethink from '../../../database/rethinkDriver'
 import NotificationTaskInvolves from '../../../database/types/NotificationTaskInvolves'
 import Task from '../../../database/types/Task'
-import segmentIo from '../../../utils/segmentIo'
+import {analytics} from '../../../utils/analytics/analytics'
 
 const publishChangeNotifications = async (
   task: Task,
   oldTask: Task,
-  changeUserId: string,
+  changeUser: {id: string; email: string},
   usersToIgnore: string[]
 ) => {
   const r = await getRethink()
-  const changeAuthorId = `${changeUserId}::${task.teamId}`
+  const changeAuthorId = `${changeUser.id}::${task.teamId}`
   const {entityMap: oldEntityMap, blocks: oldBlocks} = JSON.parse(oldTask.content)
   const {entityMap, blocks} = JSON.parse(task.content)
   const wasPrivate = oldTask.tags.includes('private')
@@ -29,7 +29,7 @@ const publishChangeNotifications = async (
         // it isn't the owner (they get the assign notification)
         userId !== task.userId &&
         // it isn't the person changing it
-        changeUserId !== userId &&
+        changeUser.id !== userId &&
         // it isn't someone in a meeting
         !usersToIgnore.includes(userId)
     )
@@ -45,18 +45,11 @@ const publishChangeNotifications = async (
     )
 
   mentions.forEach((mentionedUserId) => {
-    segmentIo.track({
-      userId: changeUserId,
-      event: 'Mentioned on Task',
-      properties: {
-        mentionedUserId,
-        teamId: task.teamId
-      }
-    })
+    analytics.mentionedOnTask(changeUser, mentionedUserId, task.teamId)
   })
   // add in the assignee changes
   if (oldTask.userId && oldTask.userId !== task.userId) {
-    if (task.userId && task.userId !== changeUserId && !usersToIgnore.includes(task.userId)) {
+    if (task.userId && task.userId !== changeUser.id && !usersToIgnore.includes(task.userId)) {
       notificationsToAdd.push(
         new NotificationTaskInvolves({
           userId: task.userId,

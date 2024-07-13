@@ -3,6 +3,8 @@ import graphql from 'babel-plugin-relay/macro'
 import {ContentState, convertToRaw, EditorState} from 'draft-js'
 import React, {forwardRef, RefObject, useEffect, useState} from 'react'
 import {commitLocalUpdate, useFragment} from 'react-relay'
+import {DiscussionThreadInput_discussion$key} from '~/__generated__/DiscussionThreadInput_discussion.graphql'
+import {DiscussionThreadInput_viewer$key} from '~/__generated__/DiscussionThreadInput_viewer.graphql'
 import useAtmosphere from '~/hooks/useAtmosphere'
 import useMutationProps from '~/hooks/useMutationProps'
 import useReplyEditorState from '~/hooks/useReplyEditorState'
@@ -13,8 +15,6 @@ import {SORT_STEP} from '~/utils/constants'
 import dndNoise from '~/utils/dndNoise'
 import {convertStateToRaw} from '~/utils/draftjs/convertToTaskContent'
 import isAndroid from '~/utils/draftjs/isAndroid'
-import {DiscussionThreadInput_discussion$key} from '~/__generated__/DiscussionThreadInput_discussion.graphql'
-import {DiscussionThreadInput_viewer$key} from '~/__generated__/DiscussionThreadInput_viewer.graphql'
 import {useBeforeUnload} from '../hooks/useBeforeUnload'
 import useInitialLocalState from '../hooks/useInitialLocalState'
 import CreateTaskMutation from '../mutations/CreateTaskMutation'
@@ -47,11 +47,6 @@ const CommentContainer = styled('div')({
   display: 'flex',
   flex: 1,
   padding: 4
-})
-
-const CommentAvatar = styled(Avatar)({
-  margin: 8,
-  transition: 'all 150ms'
 })
 
 const EditorWrap = styled('div')({
@@ -113,9 +108,11 @@ const DiscussionThreadInput = forwardRef((props: Props, ref: any) => {
       fragment DiscussionThreadInput_discussion on Discussion {
         id
         meetingId
-        teamId
         isAnonymousComment
         discussionTopicType
+        team {
+          id
+        }
       }
     `,
     discussionRef
@@ -123,7 +120,8 @@ const DiscussionThreadInput = forwardRef((props: Props, ref: any) => {
   const {picture} = viewer
   const isReply = !!props.isReply
   const isDisabled = !!props.isDisabled
-  const {id: discussionId, meetingId, isAnonymousComment, teamId, discussionTopicType} = discussion
+  const {id: discussionId, meetingId, isAnonymousComment, team, discussionTopicType} = discussion
+  const {id: teamId} = team
   const [editorState, setEditorState] = useReplyEditorState(replyMention, setReplyMention)
   const atmosphere = useAtmosphere()
   const {submitting, onError, onCompleted, submitMutation} = useMutationProps()
@@ -133,7 +131,7 @@ const DiscussionThreadInput = forwardRef((props: Props, ref: any) => {
   const [lastTypedTimestamp, setLastTypedTimestamp] = useState<Date>()
   const allowTasks = allowedThreadables.includes('task')
   const allowComments = allowedThreadables.includes('comment')
-  const allowPolls = !__PRODUCTION__ // TODO: change to "allowedThreadables.includes('poll')" once feature is done
+  const allowPolls = false // TODO: change to "allowedThreadables.includes('poll')" once feature is done
   useInitialLocalState(discussionId, 'isAnonymousComment', false)
   useInitialLocalState(discussionId, 'replyingToCommentId', '')
   useBeforeUnload(() => {
@@ -293,10 +291,11 @@ const DiscussionThreadInput = forwardRef((props: Props, ref: any) => {
   const isActionsContainerVisible = allowTasks || allowPolls
   const isActionsContainerDisabled = isCreatingTask || isCreatingPoll
   const avatar = isAnonymousComment ? anonymousAvatar : picture
+
   return (
     <Wrapper data-cy={`${dataCy}-wrapper`} ref={ref} isReply={isReply} isDisabled={isDisabled}>
       <CommentContainer>
-        <CommentAvatar size={32} picture={avatar} onClick={toggleAnonymous} />
+        <Avatar picture={avatar} onClick={toggleAnonymous} className='m-2 h-8 w-8 transition-all' />
         <EditorWrap>
           <CommentEditor
             dataCy={`${dataCy}`}

@@ -1,9 +1,9 @@
-import ActionMeeting from './types/ActionMeeting'
 import ActionMeetingMember from './types/ActionMeetingMember'
 import ActionMeetingSettings from './types/ActionMeetingSettings'
 import AgendaItemsPhase from './types/AgendaItemsPhase'
 import AuthIdentityGoogle from './types/AuthIdentityGoogle'
 import AuthIdentityLocal from './types/AuthIdentityLocal'
+import AuthIdentityMicrosoft from './types/AuthIdentityMicrosoft'
 import AzureDevOpsWorkItem from './types/AzureDevOpsWorkItem'
 import CheckInPhase from './types/CheckInPhase'
 import Comment from './types/Comment'
@@ -17,7 +17,6 @@ import JiraDimensionField from './types/JiraDimensionField'
 import PokerMeetingSettings from './types/PokerMeetingSettings'
 import ReflectPhase from './types/ReflectPhase'
 import RenamePokerTemplatePayload from './types/RenamePokerTemplatePayload'
-import RetrospectiveMeeting from './types/RetrospectiveMeeting'
 import RetrospectiveMeetingMember from './types/RetrospectiveMeetingMember'
 import RetrospectiveMeetingSettings from './types/RetrospectiveMeetingSettings'
 import SetMeetingSettingsPayload from './types/SetMeetingSettingsPayload'
@@ -26,7 +25,6 @@ import SuggestedActionInviteYourTeam from './types/SuggestedActionInviteYourTeam
 import SuggestedActionTryActionMeeting from './types/SuggestedActionTryActionMeeting'
 import SuggestedActionTryRetroMeeting from './types/SuggestedActionTryRetroMeeting'
 import SuggestedActionTryTheDemo from './types/SuggestedActionTryTheDemo'
-import TeamPromptMeeting from './types/TeamPromptMeeting'
 import TeamPromptMeetingMember from './types/TeamPromptMeetingMember'
 import TeamPromptMeetingSettings from './types/TeamPromptMeetingSettings'
 import TeamPromptResponsesPhase from './types/TeamPromptResponsesPhase'
@@ -43,6 +41,7 @@ const rootTypes = [
   IntegrationProviderOAuth2,
   IntegrationProviderWebhook,
   AuthIdentityGoogle,
+  AuthIdentityMicrosoft,
   AuthIdentityLocal,
   CheckInPhase,
   ReflectPhase,
@@ -53,10 +52,8 @@ const rootTypes = [
   TeamPromptResponsesPhase,
   GenericMeetingPhase,
   EstimatePhase,
-  ActionMeeting,
   ActionMeetingMember,
   PokerMeetingSettings,
-  RetrospectiveMeeting,
   RetrospectiveMeetingMember,
   RetrospectiveMeetingSettings,
   SetMeetingSettingsPayload,
@@ -71,7 +68,6 @@ const rootTypes = [
   TimelineEventCompletedActionMeeting,
   TimelineEventPokerComplete,
   ActionMeetingSettings,
-  TeamPromptMeeting,
   TeamPromptMeetingMember,
   TeamPromptMeetingSettings,
   Comment,

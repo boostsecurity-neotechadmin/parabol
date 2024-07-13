@@ -1,6 +1,6 @@
-import {SetOrgUserRoleSuccessResolvers} from '../resolverTypes'
 import {getUserId} from '../../../utils/authorization'
 import errorFilter from '../../errorFilter'
+import {SetOrgUserRoleSuccessResolvers} from '../resolverTypes'
 
 export type SetOrgUserRoleSuccessSource = {
   orgId: string
@@ -10,7 +10,7 @@ export type SetOrgUserRoleSuccessSource = {
 
 const SetOrgUserRoleSuccess: SetOrgUserRoleSuccessResolvers = {
   organization: async ({orgId}, _args, {dataLoader}) => {
-    return dataLoader.get('organizations').load(orgId)
+    return dataLoader.get('organizations').loadNonNull(orgId)
   },
   updatedOrgMember: async ({organizationUserId}, _args, {dataLoader}) => {
     return dataLoader.get('organizationUsers').load(organizationUserId)

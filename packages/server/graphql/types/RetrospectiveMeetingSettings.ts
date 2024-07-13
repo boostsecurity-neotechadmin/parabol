@@ -7,16 +7,15 @@ import {
   GraphQLObjectType,
   GraphQLString
 } from 'graphql'
-import MeetingTemplate from '../../database/types/MeetingTemplate'
 import db from '../../db'
 import {MeetingTypeEnum} from '../../postgres/types/Meeting'
+import {ORG_HOTNESS_FACTOR, TEAM_HOTNESS_FACTOR} from '../../utils/getTemplateScore'
 import {GQLContext} from '../graphql'
 import connectionFromTemplateArray from '../queries/helpers/connectionFromTemplateArray'
 import getScoredTemplates from '../queries/helpers/getScoredTemplates'
 import resolveSelectedTemplate from '../queries/helpers/resolveSelectedTemplate'
 import ReflectTemplate, {ReflectTemplateConnection} from './ReflectTemplate'
 import TeamMeetingSettings, {teamMeetingSettingsFields} from './TeamMeetingSettings'
-import {ORG_HOTNESS_FACTOR, TEAM_HOTNESS_FACTOR} from '../../utils/getTemplateScore'
 
 const RetrospectiveMeetingSettings: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<
   any,
@@ -86,10 +85,10 @@ const RetrospectiveMeetingSettings: GraphQLObjectType<any, GQLContext> = new Gra
         const {orgId} = team
         const templates = await dataLoader.get('meetingTemplatesByOrgId').load(orgId)
         const organizationTemplates = templates.filter(
-          (template: MeetingTemplate) =>
+          (template) =>
             template.scope !== 'TEAM' &&
             template.teamId !== teamId &&
-            (template.type as MeetingTypeEnum) === 'retrospective'
+            template.type === 'retrospective'
         )
         const scoredTemplates = await getScoredTemplates(organizationTemplates, ORG_HOTNESS_FACTOR)
         return connectionFromTemplateArray(scoredTemplates, first, after)
@@ -117,13 +116,10 @@ const RetrospectiveMeetingSettings: GraphQLObjectType<any, GQLContext> = new Gra
         return connectionFromTemplateArray(publicTemplates, first, after)
       }
     },
-    recallBotId: {
-      type: GraphQLID,
-      description: 'The botId for the recall bot in the video meeting'
-    },
     videoMeetingURL: {
       type: GraphQLString,
-      description: 'The Zoom meeting URL for the meeting'
+      description:
+        'The meeting URL that we will transcribe; stored in settings until the meeting starts'
     }
   })
 })

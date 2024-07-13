@@ -1,12 +1,12 @@
 import React, {Suspense, useCallback} from 'react'
 import {useHistory, useLocation} from 'react-router'
-import useRouter from '../hooks/useRouter'
 import ShareTopicModal from '~/components/ShareTopicModal'
-import {renderLoader} from '../utils/relay/renderLoader'
-import useQueryLoaderNow from '../hooks/useQueryLoaderNow'
 import shareTopicModalQuery, {
   ShareTopicModalQuery
 } from '../__generated__/ShareTopicModalQuery.graphql'
+import useQueryLoaderNow from '../hooks/useQueryLoaderNow'
+import useRouter from '../hooks/useRouter'
+import {Loader} from '../utils/relay/renderLoader'
 
 const ShareTopicRouterRoot = () => {
   const {match} = useRouter<{stageId: string; meetingId: string}>()
@@ -29,7 +29,7 @@ const ShareTopicRouterRoot = () => {
   }, [location])
 
   return (
-    <Suspense fallback={renderLoader()}>
+    <Suspense fallback={<Loader />}>
       {queryRef && (
         <ShareTopicModal
           stageId={stageId}

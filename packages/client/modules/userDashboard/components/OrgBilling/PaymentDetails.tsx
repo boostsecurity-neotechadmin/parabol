@@ -1,17 +1,17 @@
 import styled from '@emotion/styled'
-import {PaymentDetails_organization$key} from '../../../../__generated__/PaymentDetails_organization.graphql'
-import graphql from 'babel-plugin-relay/macro'
-import {useFragment} from 'react-relay'
 import {Divider} from '@mui/material'
 import {Elements} from '@stripe/react-stripe-js'
-import {loadStripe} from '@stripe/stripe-js'
-import React from 'react'
+import {StripeCardNumberElement, loadStripe} from '@stripe/stripe-js'
+import graphql from 'babel-plugin-relay/macro'
+import React, {MutableRefObject, useRef} from 'react'
+import {useFragment} from 'react-relay'
+import {PaymentDetails_organization$key} from '../../../../__generated__/PaymentDetails_organization.graphql'
 import Panel from '../../../../components/Panel/Panel'
 import Row from '../../../../components/Row/Row'
 import {PALETTE} from '../../../../styles/paletteV3'
 import {ElementWidth} from '../../../../types/constEnums'
-import BillingForm from './BillingForm'
 import {MONTHLY_PRICE} from '../../../../utils/constants'
+import BillingForm from './BillingForm'
 
 const StyledPanel = styled(Panel)({
   maxWidth: ElementWidth.PANEL_WIDTH
@@ -95,11 +95,12 @@ const ActiveUserBlock = styled('div')({
 const stripePromise = loadStripe(window.__ACTION__.stripe)
 
 type Props = {
+  cardNumberRef: MutableRefObject<StripeCardNumberElement | null>
   organizationRef: PaymentDetails_organization$key
 }
 
 const PaymentDetails = (props: Props) => {
-  const {organizationRef} = props
+  const {cardNumberRef, organizationRef} = props
 
   const organization = useFragment(
     graphql`
@@ -115,15 +116,16 @@ const PaymentDetails = (props: Props) => {
   const {id: orgId, orgUserCount} = organization
   const {activeUserCount} = orgUserCount
   const price = activeUserCount * MONTHLY_PRICE
+  const ref = useRef<HTMLDivElement | null>(null)
 
   return (
     <StyledPanel label='Credit Card'>
       <StyledRow className={'flex-col-reverse md:flex-row'}>
-        <Plan className={'w-full md:w-1/2'}>
+        <Plan className={'w-full md:w-1/2'} ref={ref}>
           <Title>{'Credit Card Details'}</Title>
           <Content>
             <Elements stripe={stripePromise}>
-              <BillingForm orgId={orgId} />
+              <BillingForm cardNumberRef={cardNumberRef} orgId={orgId} />
             </Elements>
           </Content>
         </Plan>

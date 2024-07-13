@@ -1,12 +1,12 @@
 import graphql from 'babel-plugin-relay/macro'
+import {WholeMeetingSummaryResult_meeting$key} from 'parabol-client/__generated__/WholeMeetingSummaryResult_meeting.graphql'
 import {PALETTE} from 'parabol-client/styles/paletteV3'
 import {FONT_FAMILY} from 'parabol-client/styles/typographyV2'
-import {WholeMeetingSummaryResult_meeting$key} from 'parabol-client/__generated__/WholeMeetingSummaryResult_meeting.graphql'
 import React, {useEffect} from 'react'
 import {useFragment} from 'react-relay'
 import useAtmosphere from '../../../../../hooks/useAtmosphere'
-import SendClientSegmentEventMutation from '../../../../../mutations/SendClientSegmentEventMutation'
 import {AIExplainer} from '../../../../../types/constEnums'
+import SendClientSideEvent from '../../../../../utils/SendClientSideEvent'
 import EmailBorderBottom from './EmailBorderBottom'
 
 const topicTitleStyle = {
@@ -49,6 +49,7 @@ const WholeMeetingSummaryResult = (props: Props) => {
         summary
         team {
           tier
+          billingTier
         }
       }
     `,
@@ -58,9 +59,9 @@ const WholeMeetingSummaryResult = (props: Props) => {
   const {summary: wholeMeetingSummary, team} = meeting
   const explainerText = team?.tier === 'starter' ? AIExplainer.STARTER : AIExplainer.PREMIUM_MEETING
   useEffect(() => {
-    SendClientSegmentEventMutation(atmosphere, 'AI Summary Viewed', {
+    SendClientSideEvent(atmosphere, 'AI Summary Viewed', {
       source: 'Meeting Summary',
-      tier: meeting.team.tier,
+      tier: meeting.team.billingTier,
       meetingId: meeting.id
     })
   }, [])

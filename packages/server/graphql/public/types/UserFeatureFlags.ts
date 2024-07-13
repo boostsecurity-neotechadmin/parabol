@@ -1,14 +1,10 @@
 import {UserFeatureFlagsResolvers} from '../resolverTypes'
 
 const UserFeatureFlags: UserFeatureFlagsResolvers = {
-  azureDevOps: ({azureDevOps}) => !!azureDevOps,
-  msTeams: ({msTeams}) => !!msTeams,
   insights: ({insights}) => !!insights,
   noAISummary: ({noAISummary}) => !!noAISummary,
   noMeetingHistoryLimit: ({noMeetingHistoryLimit}) => !!noMeetingHistoryLimit,
-  checkoutFlow: ({checkoutFlow}) => !!checkoutFlow,
-  retrosInDisguise: ({retrosInDisguise}) => !!retrosInDisguise,
-  gcal: ({gcal}) => !!gcal
+  signUpDestinationTeam: ({signUpDestinationTeam}) => !!signUpDestinationTeam
 }
 
 export default UserFeatureFlags

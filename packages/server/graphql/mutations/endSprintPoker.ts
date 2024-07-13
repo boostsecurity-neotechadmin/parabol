@@ -7,6 +7,8 @@ import getRethink from '../../database/rethinkDriver'
 import Meeting from '../../database/types/Meeting'
 import MeetingPoker from '../../database/types/MeetingPoker'
 import TimelineEventPokerComplete from '../../database/types/TimelineEventPokerComplete'
+import getKysely from '../../postgres/getKysely'
+import {Logger} from '../../utils/Logger'
 import {analytics} from '../../utils/analytics/analytics'
 import {getUserId, isSuperUser, isTeamMember} from '../../utils/authorization'
 import getPhase from '../../utils/getPhase'
@@ -15,8 +17,8 @@ import publish from '../../utils/publish'
 import standardError from '../../utils/standardError'
 import {GQLContext} from '../graphql'
 import EndSprintPokerPayload from '../types/EndSprintPokerPayload'
-import collectReactjis from './helpers/collectReactjis'
 import sendNewMeetingSummary from './helpers/endMeeting/sendNewMeetingSummary'
+import gatherInsights from './helpers/gatherInsights'
 import {IntegrationNotifier} from './helpers/notifications/IntegrationNotifier'
 import removeEmptyTasks from './helpers/removeEmptyTasks'
 import updateTeamInsights from './helpers/updateTeamInsights'
@@ -74,7 +76,7 @@ export default {
       estimateStages.filter(({isComplete}) => isComplete).map(({taskId}) => taskId)
     ).size
     const discussionIds = estimateStages.map((stage) => stage.discussionId)
-    const usedReactjis = await collectReactjis(meeting, dataLoader)
+    const insights = await gatherInsights(meeting, dataLoader)
 
     const completedMeeting = (await r
       .table('NewMeeting')
@@ -89,7 +91,7 @@ export default {
             .count()
             .default(0) as unknown as number,
           storyCount,
-          usedReactjis
+          ...insights
         },
         {returnChanges: true, nonAtomic: true}
       )('changes')(0)('new_val')
@@ -107,14 +109,14 @@ export default {
       dataLoader.get('teamMembersByTeamId').load(teamId),
       removeEmptyTasks(meetingId),
       // technically, this template could have mutated while the meeting was going on. but in practice, probably not
-      dataLoader.get('meetingTemplates').loadNonNull(templateId)
+      dataLoader.get('meetingTemplates').loadNonNull(templateId),
+      updateTeamInsights(teamId, dataLoader)
     ])
     IntegrationNotifier.endMeeting(dataLoader, meetingId, teamId)
-    updateTeamInsights(teamId, dataLoader)
-    analytics.sprintPokerEnd(completedMeeting, meetingMembers, template)
+    analytics.sprintPokerEnd(completedMeeting, meetingMembers, template, dataLoader)
     const isKill = !!(phase && phase.phaseType !== 'ESTIMATE')
     if (!isKill) {
-      sendNewMeetingSummary(completedMeeting, context).catch(console.log)
+      sendNewMeetingSummary(completedMeeting, context).catch(Logger.log)
       checkTeamsLimit(team.orgId, dataLoader)
     }
     const events = teamMembers.map(
@@ -126,7 +128,8 @@ export default {
           meetingId
         })
     )
-    await r.table('TimelineEvent').insert(events).run()
+    const pg = getKysely()
+    await pg.insertInto('TimelineEvent').values(events).execute()
 
     const data = {
       meetingId,

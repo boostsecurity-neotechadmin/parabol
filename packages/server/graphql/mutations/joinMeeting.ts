@@ -1,8 +1,8 @@
 import {GraphQLID, GraphQLNonNull} from 'graphql'
 import {SubscriptionChannel} from 'parabol-client/types/constEnums'
 import toTeamMemberId from '../../../client/utils/relay/toTeamMemberId'
-import getRethink from '../../database/rethinkDriver'
 import rMapIf from '../../database/rMapIf'
+import getRethink from '../../database/rethinkDriver'
 import ActionMeetingMember from '../../database/types/ActionMeetingMember'
 import CheckInStage from '../../database/types/CheckInStage'
 import {NewMeetingPhaseTypeEnum} from '../../database/types/GenericMeetingPhase'
@@ -67,7 +67,10 @@ const joinMeeting = {
     const operationId = dataLoader.share()
     const subOptions = {mutatorId, operationId}
     //AUTH
-    const meeting = await dataLoader.get('newMeetings').load(meetingId)
+    const [meeting, viewer] = await Promise.all([
+      dataLoader.get('newMeetings').load(meetingId),
+      dataLoader.get('users').loadNonNull(viewerId)
+    ])
     if (!meeting) {
       return {error: {message: 'Invalid meeting ID'}}
     }
@@ -161,7 +164,7 @@ const joinMeeting = {
 
     const data = {meetingId}
     publish(SubscriptionChannel.MEETING, meetingId, 'JoinMeetingSuccess', data, subOptions)
-    analytics.meetingJoined(viewerId, meeting)
+    analytics.meetingJoined(viewer, meeting)
     return data
   }
 }

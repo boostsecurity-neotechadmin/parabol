@@ -1,22 +1,28 @@
-import {PARABOL_AI_USER_ID} from '../../../client/utils/constants'
 import {ReasonToDowngradeEnum} from '../../../client/__generated__/DowngradeToStarterMutation.graphql'
+import {PARABOL_AI_USER_ID} from '../../../client/utils/constants'
 import {TeamLimitsEmailType} from '../../billing/helpers/sendTeamsLimitEmail'
 import Meeting from '../../database/types/Meeting'
 import MeetingMember from '../../database/types/MeetingMember'
 import MeetingRetrospective from '../../database/types/MeetingRetrospective'
 import MeetingTemplate from '../../database/types/MeetingTemplate'
-import {Reactable} from '../../database/types/Reactable'
+import {Reactable, ReactableEnum} from '../../database/types/Reactable'
+import {SlackNotificationEventEnum} from '../../database/types/SlackNotification'
 import {TaskServiceEnum} from '../../database/types/Task'
-import {ReactableEnum} from '../../graphql/private/resolverTypes'
+import TemplateScale from '../../database/types/TemplateScale'
+import {DataLoaderWorker} from '../../graphql/graphql'
+import {ModifyType} from '../../graphql/public/resolverTypes'
 import {IntegrationProviderServiceEnumType} from '../../graphql/types/IntegrationProviderServiceEnum'
 import {UpgradeCTALocationEnumType} from '../../graphql/types/UpgradeCTALocationEnum'
 import {TeamPromptResponse} from '../../postgres/queries/getTeamPromptResponsesByIds'
 import {MeetingTypeEnum} from '../../postgres/types/Meeting'
 import {MeetingSeries} from '../../postgres/types/MeetingSeries'
-import {createMeetingProperties} from './helpers'
-import {SegmentAnalytics} from './segment/SegmentAnalytics'
 import {AmplitudeAnalytics} from './amplitude/AmplitudeAnalytics'
-import getDataLoader from '../../graphql/getDataLoader'
+import {createMeetingProperties} from './helpers'
+
+export type AnalyticsUser = {
+  id: string
+  email?: string
+}
 
 export type MeetingSeriesAnalyticsProperties = Pick<
   MeetingSeries,
@@ -35,15 +41,36 @@ export type IdentifyOptions = {
   createdAt?: Date
 }
 
+export type MeetingTimerEventProperties = {
+  meetingId: string
+  phaseType: string
+  viewCount: number
+  isAsync: boolean | null
+  newScheduledEndTime: Date | null
+  timeRemaining: number | null
+  previousScheduledEndTime?: Date | null
+  stageStartAt?: Date
+}
+
 export type OrgTierChangeEventProperties = {
   orgId: string
   domain?: string
   orgName: string
   oldTier: string
   newTier: string
+  isTrial?: boolean
   reasonsForLeaving?: ReasonToDowngradeEnum[]
   otherTool?: string
   billingLeaderEmail?: string
+}
+
+export type PokerMeetingTeamRevotedProperties = {
+  teamId: string
+  hasIcebreaker: boolean
+  wasFacilitator: boolean
+  meetingNumber: number
+  teamMembersCount: number
+  teamMembersPresentCount: number
 }
 
 export type TaskProperties = {
@@ -68,7 +95,6 @@ export type MeetingSettings = {
   hasTeamHealth?: boolean
   disableAnonymity?: boolean
   videoMeetingURL?: string | null
-  recallBotId?: string | null
 }
 
 export type WebSocketProperties = {
@@ -85,9 +111,19 @@ export type AnalyticsEvent =
   | 'Comment Added'
   | 'Response Added'
   | 'Reactji Interacted'
+  | 'Reflection Added'
   | 'Meeting Recurrence Started'
   | 'Meeting Recurrence Stopped'
   | 'Meeting Settings Changed'
+  | 'Meeting Timer Started'
+  | 'Meeting Timer Stopped'
+  | 'Meeting Timer Updated'
+  | 'Poker Meeting Team Revoted'
+  | 'Template Created'
+  | 'Template Cloned'
+  | 'Template Shared'
+  | 'Scale Created'
+  | 'Scale Cloned'
   // team
   | 'Team Name Changed'
   | 'Integration Added'
@@ -103,13 +139,13 @@ export type AnalyticsEvent =
   | 'Downgrade Continue Clicked'
   | 'Organization Downgraded'
   | 'Billing Leader Modified'
-
   // task
   | 'Task Created'
   | 'Task Published'
   | 'Task Estimate Set'
   // user
   | 'Account Created'
+  | 'Account Removed'
   | 'Account Paused'
   | 'Account Unpaused'
   | 'Account Name Changed'
@@ -122,107 +158,169 @@ export type AnalyticsEvent =
   | 'Snackbar Viewed'
   // Join request
   | 'Join Request Reviewed'
+  | 'AutoJoined Team'
   // Suggest Groups
   | 'Suggested Groups Generated'
   | 'Suggest Groups Clicked'
   | 'Reset Groups Clicked'
+  // Conversion Tracking
+  | 'Conversion Modal Pay Later Clicked'
+  | 'Icebreaker Modified'
+  // Deprecated Events
+  // These will be replaced with tracking plan compliant versions by the data team
+  // Lowercase words are for backwards compatibility
+  | 'Added Agenda Item'
+  | 'Archive Organization'
+  | 'Archive Team'
+  | 'Enterprise Over User Limit'
+  | 'Locked user attempted to join a team'
+  | 'Mattermost notification sent'
+  | 'Mentioned on Task'
+  | 'MSTeams notification sent'
+  | 'New Org'
+  | 'New Team'
+  | 'Poll added'
+  | 'Slack notification sent'
+  | 'Smart group title changed'
+  | 'Task due date set'
 
 /**
- * Provides a unified inteface for sending all the analytics events
+ * Provides a unified interface for sending all the analytics events
  */
 class Analytics {
   private amplitudeAnalytics: AmplitudeAnalytics
-  private segmentAnalytics: SegmentAnalytics
 
   constructor() {
     this.amplitudeAnalytics = new AmplitudeAnalytics()
-    this.segmentAnalytics = new SegmentAnalytics()
   }
 
   // meeting
-  teamPromptEnd = (
+  teamPromptEnd = async (
     completedMeeting: Meeting,
     meetingMembers: MeetingMember[],
-    responses: TeamPromptResponse[]
+    responses: TeamPromptResponse[],
+    dataLoader: DataLoaderWorker
   ) => {
     const userIdsResponses: Record<string, string> = responses.reduce(
       (previous, response) => ({...previous, [response.userId]: response.plaintextContent}),
       {}
     )
-    meetingMembers.forEach((meetingMember) => {
-      const plaintextResponseContent = userIdsResponses[meetingMember.userId]
-      this.meetingEnd(meetingMember.userId, completedMeeting, meetingMembers, undefined, {
-        responseAdded: !!plaintextResponseContent
+    await Promise.all(
+      meetingMembers.map(async (meetingMember) => {
+        const plaintextResponseContent = userIdsResponses[meetingMember.userId]
+        return this.meetingEnd(
+          dataLoader,
+          meetingMember.userId,
+          completedMeeting,
+          meetingMembers,
+          undefined,
+          {
+            responseAdded: !!plaintextResponseContent
+          }
+        )
       })
-    })
-  }
-
-  checkInEnd = (completedMeeting: Meeting, meetingMembers: MeetingMember[]) => {
-    meetingMembers.forEach((meetingMember) =>
-      this.meetingEnd(meetingMember.userId, completedMeeting, meetingMembers)
     )
   }
 
-  retrospectiveEnd = (
+  checkInEnd = async (
+    completedMeeting: Meeting,
+    meetingMembers: MeetingMember[],
+    dataLoader: DataLoaderWorker
+  ) =>
+    Promise.all(
+      meetingMembers.map((meetingMember) =>
+        this.meetingEnd(
+          dataLoader,
+          meetingMember.userId,
+          completedMeeting,
+          meetingMembers,
+          undefined,
+          undefined
+        )
+      )
+    )
+
+  retrospectiveEnd = async (
     completedMeeting: MeetingRetrospective,
     meetingMembers: MeetingMember[],
-    template: MeetingTemplate
+    template: MeetingTemplate,
+    dataLoader: DataLoaderWorker
   ) => {
     const {disableAnonymity} = completedMeeting
-    meetingMembers.forEach((meetingMember) =>
-      this.meetingEnd(meetingMember.userId, completedMeeting, meetingMembers, template, {
-        disableAnonymity
-      })
+    return Promise.all(
+      meetingMembers.map((meetingMember) =>
+        this.meetingEnd(
+          dataLoader,
+          meetingMember.userId,
+          completedMeeting,
+          meetingMembers,
+          template,
+          {
+            disableAnonymity
+          }
+        )
+      )
     )
   }
 
   sprintPokerEnd = (
     completedMeeting: Meeting,
     meetingMembers: MeetingMember[],
-    template: MeetingTemplate
+    template: MeetingTemplate,
+    dataLoader: DataLoaderWorker
   ) => {
-    meetingMembers.forEach((meetingMember) =>
-      this.meetingEnd(meetingMember.userId, completedMeeting, meetingMembers, template)
+    return Promise.all(
+      meetingMembers.map((meetingMember) =>
+        this.meetingEnd(
+          dataLoader,
+          meetingMember.userId,
+          completedMeeting,
+          meetingMembers,
+          template
+        )
+      )
     )
   }
 
-  private meetingEnd = (
+  private meetingEnd = async (
+    dataloader: DataLoaderWorker,
     userId: string,
     completedMeeting: Meeting,
     meetingMembers: MeetingMember[],
     template?: MeetingTemplate,
     meetingSpecificProperties?: any
   ) => {
-    this.track(userId, 'Meeting Completed', {
+    const user = await dataloader.get('users').load(userId)
+    this.track({id: userId, email: user?.email}, 'Meeting Completed', {
       wasFacilitator: completedMeeting.facilitatorUserId === userId,
       ...createMeetingProperties(completedMeeting, meetingMembers, template),
       ...meetingSpecificProperties
     })
   }
 
-  meetingStarted = (userId: string, meeting: Meeting, template?: MeetingTemplate) => {
-    this.track(userId, 'Meeting Started', createMeetingProperties(meeting, undefined, template))
+  meetingStarted = (user: AnalyticsUser, meeting: Meeting, template?: MeetingTemplate) => {
+    this.track(user, 'Meeting Started', createMeetingProperties(meeting, undefined, template))
   }
 
-  recurrenceStarted = (userId: string, meetingSeries: MeetingSeriesAnalyticsProperties) => {
-    this.track(userId, 'Meeting Recurrence Started', meetingSeries)
+  recurrenceStarted = (user: AnalyticsUser, meetingSeries: MeetingSeriesAnalyticsProperties) => {
+    this.track(user, 'Meeting Recurrence Started', meetingSeries)
   }
 
-  recurrenceStopped = (userId: string, meetingSeries: MeetingSeriesAnalyticsProperties) => {
-    this.track(userId, 'Meeting Recurrence Stopped', meetingSeries)
+  recurrenceStopped = (user: AnalyticsUser, meetingSeries: MeetingSeriesAnalyticsProperties) => {
+    this.track(user, 'Meeting Recurrence Stopped', meetingSeries)
   }
 
-  meetingJoined = (userId: string, meeting: Meeting) => {
-    this.track(userId, 'Meeting Joined', createMeetingProperties(meeting))
+  meetingJoined = (user: AnalyticsUser, meeting: Meeting) => {
+    this.track(user, 'Meeting Joined', createMeetingProperties(meeting, undefined, undefined))
   }
 
   meetingSettingsChanged = (
-    userId: string,
+    user: AnalyticsUser,
     teamId: string,
     meetingType: MeetingTypeEnum,
     meetingSettings: MeetingSettings
   ) => {
-    this.track(userId, 'Meeting Settings Changed', {
+    this.track(user, 'Meeting Settings Changed', {
       teamId,
       meetingType,
       ...meetingSettings
@@ -230,13 +328,13 @@ class Analytics {
   }
 
   commentAdded = (
-    userId: string,
+    user: AnalyticsUser,
     meeting: Meeting,
     isAnonymous: boolean,
     isAsync: boolean,
     isReply: boolean
   ) => {
-    this.track(userId, 'Comment Added', {
+    this.track(user, 'Comment Added', {
       meetingId: meeting.id,
       meetingType: meeting.meetingType,
       teamId: meeting.teamId,
@@ -247,12 +345,12 @@ class Analytics {
   }
 
   responseAdded = (
-    userId: string,
+    user: AnalyticsUser,
     meetingId: string,
     teamPromptResponseId: string,
     isUpdate: boolean
   ) => {
-    this.track(userId, 'Response Added', {
+    this.track(user, 'Response Added', {
       meetingId,
       teamPromptResponseId,
       isUpdate
@@ -260,7 +358,7 @@ class Analytics {
   }
 
   reactjiInteracted = (
-    userId: string,
+    user: AnalyticsUser,
     meetingId: string,
     meetingType: MeetingTypeEnum,
     reactable: Reactable,
@@ -270,7 +368,7 @@ class Analytics {
   ) => {
     const isAIComment = 'createdBy' in reactable && reactable.createdBy === PARABOL_AI_USER_ID
     const {id: reactableId} = reactable
-    this.track(userId, 'Reactji Interacted', {
+    this.track(user, 'Reactji Interacted', {
       meetingId,
       meetingType,
       reactableId,
@@ -281,15 +379,59 @@ class Analytics {
     })
   }
 
+  reflectionAdded = (user: AnalyticsUser, teamId: string, meetingId: string) => {
+    this.track(user, 'Reflection Added', {teamId, meetingId})
+  }
+
+  meetingTimerEvent = (
+    user: AnalyticsUser,
+    event: 'Meeting Timer Started' | 'Meeting Timer Stopped' | 'Meeting Timer Updated',
+    eventProperties: MeetingTimerEventProperties
+  ) => {
+    this.track(user, event, eventProperties)
+  }
+
+  pokerMeetingTeamRevoted = (
+    user: AnalyticsUser,
+    eventProperties: PokerMeetingTeamRevotedProperties
+  ) => {
+    this.track(user, 'Poker Meeting Team Revoted', eventProperties)
+  }
+
+  templateMetrics = (
+    user: AnalyticsUser,
+    template: MeetingTemplate,
+    eventName: 'Template Created' | 'Template Cloned' | 'Template Shared'
+  ) => {
+    this.track(user, eventName, {
+      meetingTemplateId: template.id,
+      meetingTemplateType: template.type,
+      meetingTemplateScope: template.scope,
+      teamId: template.teamId
+    })
+  }
+
+  scaleMetrics = (
+    user: AnalyticsUser,
+    scale: TemplateScale,
+    eventName: 'Scale Created' | 'Scale Cloned'
+  ) => {
+    this.track(user, eventName, {
+      scaleId: scale.id,
+      scaleName: scale.name,
+      teamId: scale.teamId
+    })
+  }
+
   // team
   teamNameChanged = (
-    userId: string,
+    user: AnalyticsUser,
     teamId: string,
     oldName: string,
     newName: string,
     isOldNameDefault: boolean
   ) => {
-    this.track(userId, 'Team Name Changed', {
+    this.track(user, 'Team Name Changed', {
       teamId,
       oldName,
       newName,
@@ -298,29 +440,29 @@ class Analytics {
   }
 
   integrationAdded = (
-    userId: string,
+    user: AnalyticsUser,
     teamId: string,
     service: IntegrationProviderServiceEnumType | 'slack'
   ) => {
-    this.track(userId, 'Integration Added', {
+    this.track(user, 'Integration Added', {
       teamId,
       service
     })
   }
 
   integrationRemoved = (
-    userId: string,
+    user: AnalyticsUser,
     teamId: string,
     service: IntegrationProviderServiceEnumType | 'slack'
   ) => {
-    this.track(userId, 'Integration Removed', {
+    this.track(user, 'Integration Removed', {
       teamId,
       service
     })
   }
 
   inviteEmailSent = (
-    userId: string,
+    user: AnalyticsUser,
     teamId: string,
     inviteeEmail: string,
     isInviteeParabolUser: boolean,
@@ -328,7 +470,7 @@ class Analytics {
     success: boolean,
     isInvitedOnCreation: boolean
   ) => {
-    this.track(userId, 'Invite Email Sent', {
+    this.track(user, 'Invite Email Sent', {
       teamId,
       inviteeEmail,
       isInviteeParabolUser,
@@ -339,66 +481,69 @@ class Analytics {
   }
 
   inviteAccepted = (
-    userId: string,
+    user: AnalyticsUser,
+    inviter: AnalyticsUser,
     teamId: string,
-    inviterId: string,
     isNewUser: boolean,
     acceptAt: 'meeting' | 'team'
   ) => {
-    this.track(userId, 'Invite Accepted', {
+    this.track(user, 'Invite Accepted', {
       teamId,
-      inviterId,
+      inviterId: inviter.id,
       isNewUser,
       acceptAt
     })
 
-    this.track(inviterId, 'Sent Invite Accepted', {
+    this.track(inviter, 'Sent Invite Accepted', {
       teamId,
-      inviteeId: userId,
+      inviteeId: user.id,
       isNewUser,
       acceptAt
     })
   }
 
   //org
-  clickedUpgradeCTA = (userId: string, upgradeCTALocation: UpgradeCTALocationEnumType) => {
-    this.track(userId, 'Upgrade CTA Clicked', {upgradeCTALocation})
+  clickedUpgradeCTA = (user: AnalyticsUser, upgradeCTALocation: UpgradeCTALocationEnumType) => {
+    this.track(user, 'Upgrade CTA Clicked', {upgradeCTALocation})
   }
 
-  organizationUpgraded = (userId: string, upgradeEventProperties: OrgTierChangeEventProperties) => {
-    this.track(userId, 'Organization Upgraded', upgradeEventProperties)
+  organizationUpgraded = (
+    user: AnalyticsUser,
+    upgradeEventProperties: OrgTierChangeEventProperties
+  ) => {
+    this.track(user, 'Organization Upgraded', upgradeEventProperties)
   }
 
   organizationDowngraded = (
-    userId: string,
+    user: AnalyticsUser,
     downgradeEventProperties: OrgTierChangeEventProperties
   ) => {
-    this.track(userId, 'Organization Downgraded', downgradeEventProperties)
+    this.track(user, 'Organization Downgraded', downgradeEventProperties)
   }
 
   // task
   taskPublished = (
-    userId: string,
+    user: AnalyticsUser,
     taskProperties: TaskProperties,
     service: IntegrationProviderServiceEnumType
   ) => {
-    this.track(userId, 'Task Published', {
+    this.track(user, 'Task Published', {
       ...taskProperties,
       service
     })
   }
 
-  taskCreated = (userId: string, taskProperties: TaskProperties) => {
-    this.track(userId, 'Task Created', taskProperties)
+  taskCreated = (user: AnalyticsUser, taskProperties: TaskProperties) => {
+    this.track(user, 'Task Created', taskProperties)
   }
 
-  taskEstimateSet = (userId: string, taskEstimateProperties: TaskEstimateProperties) => {
-    this.track(userId, 'Task Estimate Set', taskEstimateProperties)
+  taskEstimateSet = (user: AnalyticsUser, taskEstimateProperties: TaskEstimateProperties) => {
+    this.track(user, 'Task Estimate Set', taskEstimateProperties)
   }
 
   // user
-  accountCreated = (userId: string, isInvited: boolean, isPatient0: boolean) => {
-    this.track(userId, 'Account Created', {
+  accountCreated = (user: AnalyticsUser, isInvited: boolean, isPatient0: boolean) => {
+    this.track(user, 'Account Created', {
       isInvited,
       // properties below needed for Google Analytics goal setting
       category: 'All',
@@ -406,69 +551,177 @@ class Analytics {
     })
   }
 
-  accountPaused = (userId: string) => this.track(userId, 'Account Paused')
+  accountRemoved = (user: AnalyticsUser, reason: string) => {
+    this.track(user, 'Account Removed', {reason})
+  }
 
-  accountUnpaused = (userId: string) => this.track(userId, 'Account Unpaused')
+  accountPaused = (user: AnalyticsUser) => this.track(user, 'Account Paused')
 
-  accountNameChanged = (userId: string, newName: string) =>
-    this.track(userId, 'Account Name Changed', {
+  accountUnpaused = (user: AnalyticsUser) => this.track(user, 'Account Unpaused')
+
+  accountNameChanged = (user: AnalyticsUser, newName: string) =>
+    this.track(user, 'Account Name Changed', {
       newName
     })
 
   billingLeaderModified = (
+    // Modifier
+    user: AnalyticsUser,
+    // id of the user being modified
     userId: string,
-    viewerId: string,
     orgId: string,
     modificationType: 'add' | 'remove'
   ) => {
-    this.track(userId, 'Billing Leader Modified', {
+    this.track(user, 'Billing Leader Modified', {
+      viewerId: user.id,
       userId,
-      viewerId,
       orgId,
       modificationType
     })
   }
 
-  userRemovedFromOrg = (userId: string, orgId: string) =>
-    this.track(userId, 'User Removed From Org', {userId, orgId})
+  userRemovedFromOrg = (user: AnalyticsUser, orgId: string) =>
+    this.track(user, 'User Removed From Org', {user: user.id, orgId})
 
-  websocketConnected = (userId: string, websocketProperties: WebSocketProperties) => {
-    this.track(userId, 'Connect WebSocket', websocketProperties)
+  websocketConnected = (user: AnalyticsUser, websocketProperties: WebSocketProperties) => {
+    this.track(user, 'Connect WebSocket', websocketProperties)
   }
 
-  websocketDisconnected = (userId: string, websocketProperties: WebSocketProperties) => {
-    this.track(userId, 'Disconnect WebSocket', websocketProperties)
+  websocketDisconnected = (user: AnalyticsUser, websocketProperties: WebSocketProperties) => {
+    this.track(user, 'Disconnect WebSocket', websocketProperties)
   }
 
-  toggleSubToSummaryEmail = (userId: string, subscribeToSummaryEmail: boolean) => {
-    this.track(userId, 'Summary Email Setting Changed', {subscribeToSummaryEmail})
+  toggleSubToSummaryEmail = (user: AnalyticsUser, subscribeToSummaryEmail: boolean) => {
+    this.track(user, 'Summary Email Setting Changed', {subscribeToSummaryEmail})
   }
 
-  notificationEmailSent = (userId: string, orgId: string, type: TeamLimitsEmailType) => {
-    this.track(userId, 'Notification Email Sent', {type, orgId})
+  notificationEmailSent = (user: AnalyticsUser, orgId: string, type: TeamLimitsEmailType) => {
+    this.track(user, 'Notification Email Sent', {type, orgId})
   }
 
-  suggestedGroupsGenerated = (userId: string, meetingId: string, teamId: string) => {
-    this.track(userId, 'Suggested Groups Generated', {meetingId, teamId})
+  suggestedGroupsGenerated = (user: AnalyticsUser, meetingId: string, teamId: string) => {
+    this.track(user, 'Suggested Groups Generated', {meetingId, teamId})
   }
 
-  suggestGroupsClicked = (userId: string, meetingId: string, teamId: string) => {
-    this.track(userId, 'Suggest Groups Clicked', {meetingId, teamId})
+  suggestGroupsClicked = (user: AnalyticsUser, meetingId: string, teamId: string) => {
+    this.track(user, 'Suggest Groups Clicked', {meetingId, teamId})
   }
 
-  resetGroupsClicked = (userId: string, meetingId: string, teamId: string) => {
-    this.track(userId, 'Reset Groups Clicked', {meetingId, teamId})
+  resetGroupsClicked = (user: AnalyticsUser, meetingId: string, teamId: string) => {
+    this.track(user, 'Reset Groups Clicked', {meetingId, teamId})
+  }
+
+  conversionModalPayLaterClicked = (user: AnalyticsUser) => {
+    this.track(user, 'Conversion Modal Pay Later Clicked')
+  }
+
+  addedAgendaItem = (user: AnalyticsUser, teamId: string, meetingId?: string) => {
+    this.track(user, 'Added Agenda Item', {teamId, meetingId})
+  }
+
+  archiveOrganization = (user: AnalyticsUser, orgId: string) => {
+    this.track(user, 'Archive Organization', {orgId})
+  }
+
+  archiveTeam = (user: AnalyticsUser, teamId: string) => {
+    this.track(user, 'Archive Team', {teamId})
+  }
+
+  enterpriseOverUserLimit = (user: AnalyticsUser, orgId: string) => {
+    this.track(user, 'Enterprise Over User Limit', {orgId})
+  }
+
+  lockedUserAttemptToJoinTeam = (user: AnalyticsUser, invitingOrgId: string) => {
+    this.track(user, 'Locked user attempted to join a team', {invitingOrgId})
+  }
+
+  mattermostNotificationSent = (
+    user: AnalyticsUser,
+    teamId: string,
+    notificationEvent: SlackNotificationEventEnum
+  ) => {
+    this.track(user, 'Mattermost notification sent', {teamId, notificationEvent})
+  }
+
+  mentionedOnTask = (user: AnalyticsUser, mentionedUserId: string, teamId: string) => {
+    this.track(user, 'Mentioned on Task', {mentionedUserId, teamId})
+  }
+
+  teamsNotificationSent = (
+    user: AnalyticsUser,
+    teamId: string,
+    notificationEvent: SlackNotificationEventEnum
+  ) => {
+    this.track(user, 'MSTeams notification sent', {teamId, notificationEvent})
+  }
+
+  newOrg = (user: AnalyticsUser, orgId: string, teamId: string, fromSignup: boolean) => {
+    this.track(user, 'New Org', {orgId, teamId, fromSignup})
+  }
+
+  newTeam = (user: AnalyticsUser, orgId: string, teamId: string, teamNumber: number) => {
+    this.track(user, 'New Team', {orgId, teamId, teamNumber})
+  }
+
+  pollAdded = (user: AnalyticsUser, teamId: string, meetingId: string) => {
+    this.track(user, 'Poll added', {meetingId, teamId})
+  }
+
+  slackNotificationSent = (
+    user: AnalyticsUser,
+    teamId: string,
+    notificationEvent: SlackNotificationEventEnum,
+    reflectionGroupId?: string
+  ) => {
+    this.track(user, 'Slack notification sent', {teamId, notificationEvent, reflectionGroupId})
+  }
+
+  smartGroupTitleChanged = (
+    user: AnalyticsUser,
+    similarity: number,
+    smartTitle: string,
+    normalizedTitle: string
+  ) => {
+    this.track(user, 'Smart group title changed', {
+      similarity,
+      smartTitle,
+      title: normalizedTitle
+    })
+  }
+
+  taskDueDateSet = (user: AnalyticsUser, teamId: string, taskId: string) => {
+    this.track(user, 'Task due date set', {taskId, teamId})
+  }
+
+  autoJoined = (user: AnalyticsUser, teamId: string) => {
+    this.track(user, 'AutoJoined Team', {userId: user.id, teamId})
+  }
+
+  icebreakerModified = (
+    user: AnalyticsUser,
+    meetingId: string,
+    modifyType: ModifyType,
+    success: boolean
+  ) => {
+    this.track(user, 'Icebreaker Modified', {
+      userId: user.id,
+      meetingId,
+      modifyType,
+      success
+    })
   }
 
   identify = (options: IdentifyOptions) => {
     this.amplitudeAnalytics.identify(options)
-    this.segmentAnalytics.identify(options)
   }
 
-  private track = (userId: string, event: AnalyticsEvent, properties?: Record<string, any>) => {
-    const dataloader = getDataLoader()
-    this.amplitudeAnalytics.track(userId, event, dataloader, properties)
-    this.segmentAnalytics.track(userId, event, dataloader, properties)
+  private track = (
+    user: AnalyticsUser,
+    event: AnalyticsEvent,
+    properties?: Record<string, any>
+  ) => {
+    const {id, email} = user
+    this.amplitudeAnalytics.track(id, email, event, properties)
   }
 }
 

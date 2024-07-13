@@ -10,13 +10,9 @@ const resolveSelectedTemplate =
     _args: unknown,
     {dataLoader}: GQLContext
   ) => {
-    const {id: settingsId, selectedTemplateId, teamId} = source
-    const [team, template] = await Promise.all([
-      dataLoader.get('teams').loadNonNull(teamId),
-      dataLoader.get('meetingTemplates').load(selectedTemplateId)
-    ])
-    const {tier} = team
-    if (template?.isFree || template?.scope !== 'PUBLIC' || tier !== 'starter') {
+    const {id: settingsId, selectedTemplateId} = source
+    const template = await dataLoader.get('meetingTemplates').load(selectedTemplateId)
+    if (template) {
       return template
     }
     // there may be holes in our template deletion or reselection logic, so doing this to be safe

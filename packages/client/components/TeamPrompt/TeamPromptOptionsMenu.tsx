@@ -1,22 +1,24 @@
 import styled from '@emotion/styled'
-import {Flag, Link, Replay} from '@mui/icons-material'
+import {Flag, Link as MuiLink, OpenInNew, Replay} from '@mui/icons-material'
 import graphql from 'babel-plugin-relay/macro'
 import React from 'react'
 import {useFragment} from 'react-relay'
+import {Link} from 'react-router-dom'
+import {TeamPromptOptionsMenu_meeting$key} from '~/__generated__/TeamPromptOptionsMenu_meeting.graphql'
 import useAtmosphere from '~/hooks/useAtmosphere'
 import {MenuProps} from '~/hooks/useMenu'
 import useMutationProps from '~/hooks/useMutationProps'
 import useRouter from '~/hooks/useRouter'
 import EndTeamPromptMutation from '~/mutations/EndTeamPromptMutation'
-import {TeamPromptOptionsMenu_meeting$key} from '~/__generated__/TeamPromptOptionsMenu_meeting.graphql'
-import SendClientSegmentEventMutation from '../../mutations/SendClientSegmentEventMutation'
 import {PALETTE} from '../../styles/paletteV3'
+import SendClientSideEvent from '../../utils/SendClientSideEvent'
 import makeAppURL from '../../utils/makeAppURL'
 import Menu from '../Menu'
 import MenuItem from '../MenuItem'
 import {MenuItemLabelStyle} from '../MenuItemLabel'
+import SlackSVG from '../SlackSVG'
 
-const LinkIcon = styled(Link)({
+const LinkIcon = styled(MuiLink)({
   color: PALETTE.SLATE_600,
   marginRight: 8
 })
@@ -105,7 +107,7 @@ const TeamPromptOptionsMenu = (props: Props) => {
             const copyUrl = makeAppURL(window.location.origin, `meeting-series/${meetingId}`)
             await navigator.clipboard.writeText(copyUrl)
 
-            SendClientSegmentEventMutation(atmosphere, 'Copied Meeting Series Link', {
+            SendClientSideEvent(atmosphere, 'Copied Meeting Series Link', {
               teamId: team?.id,
               meetingId: meetingId
             })
@@ -128,6 +130,24 @@ const TeamPromptOptionsMenu = (props: Props) => {
         onClick={() => {
           menuProps.closePortal()
           openRecurrenceSettingsModal()
+        }}
+      />
+      <MenuItem
+        key='slack'
+        label={
+          <Link to={`/team/${team.id}/integrations`} target='_blank' rel='noopener noreferrer'>
+            <OptionMenuItem>
+              <SlackSVG />
+              <span className='ml-2'>Configure Slack</span>
+              <OpenInNew className='ml-auto text-base text-slate-600' />
+            </OptionMenuItem>
+          </Link>
+        }
+        onClick={() => {
+          SendClientSideEvent(atmosphere, 'Configure Slack Standup Clicked', {
+            teamId: team?.id,
+            meetingId: meetingId
+          })
         }}
       />
       <MenuItem

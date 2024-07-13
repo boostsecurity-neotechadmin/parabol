@@ -4,8 +4,8 @@ import React from 'react'
 import {Draggable, DraggableProvided, DraggableStateSnapshot} from 'react-beautiful-dnd'
 import {useFragment} from 'react-relay'
 import {AreaEnum, TaskStatusEnum} from '~/__generated__/UpdateTaskMutation.graphql'
-import NullableTask from '../../components/NullableTask/NullableTask'
 import {DraggableTask_task$key} from '../../__generated__/DraggableTask_task.graphql'
+import NullableTask from '../../components/NullableTask/NullableTask'
 
 const DraggableStyles = styled('div')({
   // sometimes the default blue fuzzies show up around the containing div
@@ -44,6 +44,7 @@ const DraggableTask = (props: Props) => {
           {...dragProvided.dragHandleProps}
         >
           <NullableTask
+            className='max-w-[296px]'
             dataCy={`draggable-task`}
             area={area}
             task={task}

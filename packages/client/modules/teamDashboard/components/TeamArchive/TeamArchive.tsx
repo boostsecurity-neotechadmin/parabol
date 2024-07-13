@@ -11,16 +11,16 @@ import {
   InfiniteLoaderProps
 } from 'react-virtualized'
 import {GridCellRenderer, GridCoreProps} from 'react-virtualized/dist/es/Grid'
+import {TeamArchive_team$key} from '~/__generated__/TeamArchive_team.graphql'
 import extractTextFromDraftString from '~/utils/draftjs/extractTextFromDraftString'
 import getSafeRegex from '~/utils/getSafeRegex'
 import toTeamMemberId from '~/utils/relay/toTeamMemberId'
-import {TeamArchive_team$key} from '~/__generated__/TeamArchive_team.graphql'
-import NullableTask from '../../../../components/NullableTask/NullableTask'
-import {PALETTE} from '../../../../styles/paletteV3'
-import {Card, Layout, MathEnum} from '../../../../types/constEnums'
 import {TeamArchiveArchivedTasksQuery} from '../../../../__generated__/TeamArchiveArchivedTasksQuery.graphql'
 import {TeamArchiveQuery} from '../../../../__generated__/TeamArchiveQuery.graphql'
 import {TeamArchive_query$key} from '../../../../__generated__/TeamArchive_query.graphql'
+import NullableTask from '../../../../components/NullableTask/NullableTask'
+import {PALETTE} from '../../../../styles/paletteV3'
+import {Card, Layout, MathEnum} from '../../../../types/constEnums'
 import UserTasksHeader from '../../../userDashboard/components/UserTasksHeader/UserTasksHeader'
 import getRallyLink from '../../../userDashboard/helpers/getRallyLink'
 import TeamArchiveHeader from '../TeamArchiveHeader/TeamArchiveHeader'
@@ -300,7 +300,13 @@ const TeamArchive = (props: Props) => {
               key={`cardBlockFor${task.id}`}
               style={{...style, width: CARD_WIDTH, padding: '1rem 0.5rem'}}
             >
-              <NullableTask dataCy={`archive-task`} key={key} area='teamDash' task={task} />
+              <NullableTask
+                className='max-w-[296px]'
+                dataCy={`archive-task`}
+                key={key}
+                area='teamDash'
+                task={task}
+              />
             </div>
           )
         }}

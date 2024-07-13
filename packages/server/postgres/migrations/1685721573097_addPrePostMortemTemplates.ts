@@ -965,6 +965,7 @@ const NEW_TEMPLATE_CONFIGS: Template[] = [
 const createdAt = new Date()
 
 const makeId = (name: string, type: 'template' | 'prompt') => {
+  // FIXME truncate to 100 characters
   const cleanedName = name
     .replace(/[^0-9a-zA-Z ]/g, '') // remove emojis, apostrophes, and dashes
     .split(' ')
@@ -982,13 +983,12 @@ const getTemplateIllustrationUrl = (filename: string) => {
   const partialPath = `Organization/aGhostOrg/${filename}`
   if (cdnType === 'local') {
     return `/self-hosted/${partialPath}`
-  } else if (cdnType === 's3') {
+  } else {
     const {CDN_BASE_URL} = process.env
     if (!CDN_BASE_URL) throw new Error('Missng Env: CDN_BASE_URL')
     const hostPath = CDN_BASE_URL.replace(/^\/+/, '')
     return `https://${hostPath}/store/${partialPath}`
   }
-  throw new Error('Mssing Env: FILE_STORE_PROVIDER')
 }
 
 const makeTemplate = (template: Template) => ({

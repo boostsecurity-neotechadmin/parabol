@@ -1,18 +1,14 @@
-/// <reference types="@types/segment-analytics" />
-
+import * as amplitude from '@amplitude/analytics-browser'
 import {datadogRum} from '@datadog/browser-rum'
 import * as Sentry from '@sentry/browser'
 import graphql from 'babel-plugin-relay/macro'
-import {useEffect, useRef} from 'react'
+import {useEffect} from 'react'
 import ReactGA from 'react-ga4'
+import {AnalyticsPageQuery} from '~/__generated__/AnalyticsPageQuery.graphql'
 import useAtmosphere from '~/hooks/useAtmosphere'
 import {LocalStorageKey} from '~/types/constEnums'
 import safeIdentify from '~/utils/safeIdentify'
-import {AnalyticsPageQuery} from '~/__generated__/AnalyticsPageQuery.graphql'
-import useScript from '../hooks/useScript'
-import getAnonymousId from '../utils/getAnonymousId'
 import getContentGroup from '../utils/getContentGroup'
-import makeHref from '../utils/makeHref'
 
 const query = graphql`
   query AnalyticsPageQuery {
@@ -26,7 +22,6 @@ const query = graphql`
 
 declare global {
   interface Window {
-    analytics: SegmentAnalytics.AnalyticsJS
     gtag: (
       command: 'config' | 'get' | 'set',
       targetId: string,
@@ -88,10 +83,16 @@ if (datadogEnabled) {
   datadogRum.startSessionReplayRecording()
 }
 
-// page titles are changed in child components via useDocumentTitle, which fires after this
-// we must guarantee that this runs after useDocumentTitle
-// we can't move this into useDocumentTitle since the pathname may change without chaging the title
-const TIME_TO_RENDER_TREE = 100
+amplitude.init(window.__ACTION__.AMPLITUDE_WRITE_KEY, {
+  defaultTracking: {
+    attribution: false,
+    pageViews: false,
+    sessions: false,
+    formInteractions: false,
+    fileDownloads: false
+  },
+  logLevel: __PRODUCTION__ ? amplitude.Types.LogLevel.None : amplitude.Types.LogLevel.Debug
+})
 
 const AnalyticsPage = () => {
   const atmosphere = useAtmosphere()
@@ -107,7 +108,7 @@ const AnalyticsPage = () => {
 
   useEffect(() => {
     const configGA = async () => {
-      if (!ReactGA.isInitialized || !isSegmentLoaded) {
+      if (!ReactGA.isInitialized) {
         return
       }
 
@@ -134,27 +135,8 @@ const AnalyticsPage = () => {
 
   /* eslint-disable */
   const {href, pathname} = location
-  const pathnameRef = useRef(pathname)
-  const segmentKey = window.__ACTION__.segment
-  useEffect(() => {
-    if (!window.analytics) {
-      // we dont use the segment snippet because we can guarantee no call will be made to segment before it's loaded
-      // internally, segment will call an initial page event unless parseFloat(version, 10) !== 0
-      // this knowledge comes from reading the minified analytics.js code
-      const mockSnippet = [] as any
-      mockSnippet.SNIPPET_VERSION = '4.1.0'
-      window.analytics = mockSnippet
-    }
-  }, [])
-  const [isSegmentLoaded] = useScript(
-    `https://cdn.segment.com/analytics.js/v1/${segmentKey}/analytics.min.js`,
-    {
-      crossOrigin: true
-    }
-  )
 
   useEffect(() => {
-    if (!isSegmentLoaded || !window.analytics) return
     const token = window.localStorage.getItem(LocalStorageKey.APP_TOKEN_KEY)
     // no token means authentication is required & authentication handles identify on its own
     if (!token) return
@@ -173,35 +155,40 @@ const AnalyticsPage = () => {
       safeIdentify(atmosphere.viewerId, email)
     }
     cacheEmail().catch()
-  }, [isSegmentLoaded])
+  }, [])
 
   useEffect(() => {
-    if (!isSegmentLoaded || !window.analytics || typeof window.analytics.page !== 'function') return
-    const prevPathname = pathnameRef.current
-    pathnameRef.current = pathname
+    ReactGA.send({hitType: 'pageview', content_group: getContentGroup(pathname)})
+  }, [pathname])
+
+  // page titles are changed in child components via useDocumentTitle, which fires after this
+  // we must guarantee that this runs after useDocumentTitle
+  // we can't move this into useDocumentTitle since the pathname may change without chaging the title
+  const TIME_TO_RENDER_TREE = 100
+  useEffect(() => {
     setTimeout(async () => {
       const title = document.title || ''
-      // This is the magic. Ignore everything after hitting the pipe
       const [pageName] = title.split(' | ')
-      // Detect browser translations, see https://www.ctrl.blog/entry/detect-machine-translated-webpages.html
       const translated = !!document.querySelector(
         'html.translated-ltr, html.translated-rtl, ya-tr-span, *[_msttexthash], *[x-bergamot-translated]'
       )
-      window.analytics.page(
-        pageName,
+      amplitude.track(
+        'Loaded a Page',
         {
-          referrer: makeHref(prevPathname),
+          name: pageName,
+          referrer: document.referrer,
           title,
           path: pathname,
           url: href,
-          translated
+          translated,
+          search: location.search
         },
-        // See: segmentIo.ts:28 for more information on the next line
-        {integrations: {'Google Analytics': {clientId: await getAnonymousId()}}}
+        {
+          user_id: atmosphere.viewerId
+        }
       )
-      ReactGA.send({hitType: 'pageview', content_group: getContentGroup(pathname)})
     }, TIME_TO_RENDER_TREE)
-  }, [isSegmentLoaded, pathname])
+  }, [pathname, location.search, atmosphere.viewerId])
 
   // We need to refresh the chat widget so it can recheck the URL
   useEffect(() => {

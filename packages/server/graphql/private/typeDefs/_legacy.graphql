@@ -448,6 +448,34 @@ type Mutation {
   ): Boolean
 
   """
+  When stripe tells us a subscription was updated, update the details in our own DB
+  """
+  stripeCreateSubscription(
+    """
+    The stripe customer ID, or stripeId
+    """
+    customerId: ID!
+    """
+    The stripe subscription ID
+    """
+    subscriptionId: ID!
+  ): Boolean
+
+  """
+  When stripe tells us a subscription was deleted, update the details in our own DB
+  """
+  stripeDeleteSubscription(
+    """
+    The stripe customer ID, or stripeId
+    """
+    customerId: ID!
+    """
+    The stripe subscription ID
+    """
+    subscriptionId: ID!
+  ): Boolean
+
+  """
   When a new invoiceitem is sent from stripe, tag it with metadata
   """
   stripeUpdateInvoiceItem(
@@ -912,9 +940,9 @@ A connection to a list of items.
 """
 type JiraIssueConnection {
   """
-  Page info with cursors coerced to ISO8601 dates
+  Page info with cursors
   """
-  pageInfo: PageInfoDateCursor
+  pageInfo: PageInfo
 
   """
   A list of edges.
@@ -935,7 +963,7 @@ type JiraIssueEdge {
   The item at the end of the edge
   """
   node: JiraIssue!
-  cursor: DateTime
+  cursor: String
 }
 
 interface TaskIntegration {
@@ -1067,6 +1095,7 @@ type JiraServerIssue implements TaskIntegration {
   id: ID!
   issueKey: ID!
   projectKey: ID!
+  projectName: String!
 
   """
   The parabol teamId this issue was fetched for
@@ -1093,6 +1122,11 @@ type JiraServerIssue implements TaskIntegration {
   The description converted into raw HTML
   """
   descriptionHTML: String!
+
+  """
+  The timestamp the issue was last updated
+  """
+  updatedAt: DateTime!
 }
 
 """
@@ -1419,36 +1453,6 @@ enum TaskStatusEnum {
   stuck
   done
   future
-}
-
-"""
-The types of flags that give an individual user super powers
-"""
-type UserFeatureFlags {
-  """
-  true if spotlight is allowed
-  """
-  spotlight: Boolean!
-
-  """
-  true if standups is allowed
-  """
-  standups: Boolean!
-
-  """
-  true if gitlab is allowed
-  """
-  gitlab: Boolean!
-
-  """
-  true if azuredevops is allowed
-  """
-  azureDevOps: Boolean!
-
-  """
-  true if recurrence is allowed
-  """
-  recurrence: Boolean!
 }
 
 """

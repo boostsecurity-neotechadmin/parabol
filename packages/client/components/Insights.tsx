@@ -3,9 +3,9 @@ import graphql from 'babel-plugin-relay/macro'
 import React from 'react'
 import {PreloadedQuery, usePreloadedQuery} from 'react-relay'
 import useAtmosphere from '~/hooks/useAtmosphere'
-import SendClientSegmentEventMutation from '~/mutations/SendClientSegmentEventMutation'
-import {Elevation} from '../styles/elevation'
+import SendClientSideEvent from '~/utils/SendClientSideEvent'
 import {InsightsQuery} from '../__generated__/InsightsQuery.graphql'
+import {Elevation} from '../styles/elevation'
 import InsightsCharts from './InsightsCharts'
 import InsightsDomainPanel from './InsightsDomainPanel'
 import Panel from './Panel/Panel'
@@ -41,7 +41,7 @@ const Insights = (props: Props) => {
   const {domains} = viewer
   const atmosphere = useAtmosphere()
   domains.forEach(({id: domainId}) => {
-    SendClientSegmentEventMutation(atmosphere, 'Viewed domain stats', {
+    SendClientSideEvent(atmosphere, 'Viewed domain stats', {
       domainId
     })
   })

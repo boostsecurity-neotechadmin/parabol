@@ -162,11 +162,40 @@ export default {
       },
       contentShow: {
         from: {opacity: 0, transform: 'translate(-50%, -50%) translateY(32px) scale(0.96)'}
+      },
+      scaleIn: {
+        from: {
+          opacity: 0,
+          transform: 'scale(0)'
+        }
+      },
+      slideUp: {
+        from: {
+          opacity: 0,
+          transform: 'translateY(10px)'
+        },
+        to: {
+          opacity: 1,
+          transform: 'translateY(0)'
+        }
+      },
+      slideDown: {
+        from: {
+          opacity: 0,
+          transform: 'translateY(-10px)'
+        },
+        to: {
+          opacity: 1,
+          transform: 'translateY(0)'
+        }
       }
     },
     animation: {
       overlayShow: 'overlayShow 150ms cubic-bezier(0.16, 1, 0.3, 1)',
-      contentShow: 'contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1)'
+      contentShow: 'contentShow 150ms cubic-bezier(0.16, 1, 0.3, 1)',
+      scaleIn: 'scaleIn 150ms cubic-bezier(0, 0, .2, 1)',
+      slideUp: 'slideUp 200ms cubic-bezier(0, 0, 0.2, 1)',
+      slideDown: 'slideDown 200ms cubic-bezier(0, 0, 0.2, 1)'
     }
   }
 } as const

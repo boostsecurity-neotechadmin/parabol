@@ -15,7 +15,8 @@ export const enum AppBar {
 
 export const enum AuthIdentityTypeEnum {
   LOCAL = 'LOCAL',
-  GOOGLE = 'GOOGLE'
+  GOOGLE = 'GOOGLE',
+  MICROSOFT = 'MICROSOFT'
 }
 
 // https://github.com/material-components/material-components-web/blob/4844330e7836d9dc97798b47594ff0dbaac51227/packages/mdc-animation/_variables.scss
@@ -139,6 +140,7 @@ export const enum ExternalLinks {
   INTEGRATIONS_SLACK = 'https://www.parabol.co/integrations/slack',
   INTEGRATIONS_MSTEAMS = 'https://www.parabol.co/integrations/msteams',
   INTEGRATIONS_SUPPORT_JIRA = 'https://www.parabol.co/integrations/jira',
+  INTEGRATIONS_SUPPORT_JIRA_AUTHORIZATION = 'https://www.parabol.co/support/authorization-issues-jira-integration',
   INTEGRATIONS_SUPPORT_JIRA_MISSING_FIELD_TEAM_MANAGED = 'https://www.parabol.co/support/estimation-in-jira-team',
   INTEGRATIONS_SUPPORT_JIRA_MISSING_FIELD_COMPANY_MANAGED = 'https://www.parabol.co/support/estimation-in-jira-company',
   INTEGRATIONS_SUPPORT_GITHUB = 'https://www.parabol.co/integrations/github',
@@ -157,6 +159,10 @@ export const enum ExternalLinks {
 
 export const enum Filter {
   BENEATH_DIALOG = 'blur(1.5px)'
+}
+
+export const enum GlobalBanner {
+  HEIGHT = 24
 }
 
 export const enum Gutters {
@@ -218,6 +224,7 @@ export const enum AuthenticationError {
   EXCEEDED_RESET_THRESHOLD = 'exceededResetThreshold',
   USER_NOT_FOUND = 'userNotFound',
   USER_EXISTS_GOOGLE = 'userExistsGoogle',
+  USER_EXISTS_MICROSOFT = 'userExistsMicrosoft',
   USER_EXISTS_SAML = 'userExistsSaml'
 }
 
@@ -271,9 +278,9 @@ export const enum MeetingTypes {
 export const enum NavSidebar {
   FONT_SIZE = 14,
   LEFT_BORDER_WIDTH = '3px',
-  LINE_HEIGHT = '24px',
+  LINE_HEIGHT = '22px',
   SUB_FONT_SIZE = 14,
-  SUB_LINE_HEIGHT = '24px',
+  SUB_LINE_HEIGHT = '22px',
   WIDTH = 256
 }
 
@@ -294,7 +301,7 @@ export const enum Providers {
   GCAL_NAME = 'Google Calendar',
   GCAL_DESC = 'Create Google Calendar events from within Parabol',
   GITHUB_DESC = 'Use GitHub Issues from within Parabol',
-  GITHUB_SCOPE = 'admin:org_hook,read:org,repo,user,write:repo_hook',
+  GITHUB_SCOPE = 'read:org,repo',
   GITLAB_SCOPE = 'api',
   MATTERMOST_NAME = 'Mattermost',
   MATTERMOST_DESC = 'Push notifications to Mattermost',
@@ -383,7 +390,7 @@ export const enum Threshold {
   MASS_INVITATION_TOKEN_LIFESPAN = 2592000000, // 30 days
   TEAM_INVITATION_LIFESPAN = 2592000000, // 30 days
   FINAL_WARNING_DAYS_BEFORE_LOCK = 7,
-  MAX_FREE_TEAMS = 10,
+  MAX_FREE_TEAMS = 100,
   MAX_ACCOUNT_PASSWORD_ATTEMPTS = 10,
   MAX_ACCOUNT_DAILY_PASSWORD_RESETS = 3,
   MAX_AVATAR_FILE_SIZE = 1024 * 1024,
@@ -394,8 +401,6 @@ export const enum Threshold {
   MAX_POKER_TEMPLATE_SCALES = 12,
   MAX_POKER_SCALE_VALUES = 30,
   POKER_SCALE_VALUE_MAX_LENGTH = 3,
-  MAX_RETRO_TEAM_TEMPLATES = 20,
-  MAX_POKER_TEAM_TEMPLATES = 20,
   MAX_POKER_DIMENSION_NAME = 50,
   MAX_QUAL_AI_MEETINGS = 3,
   MAX_REACTJIS = 12,

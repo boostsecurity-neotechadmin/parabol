@@ -8,9 +8,9 @@ import useAtmosphere from '../../../../hooks/useAtmosphere'
 import {MenuPosition} from '../../../../hooks/useCoords'
 import useMenu from '../../../../hooks/useMenu'
 import useMutationProps, {MenuMutationProps} from '../../../../hooks/useMutationProps'
-import SendClientSegmentEventMutation from '../../../../mutations/SendClientSegmentEventMutation'
 import {ExternalLinks, Providers} from '../../../../types/constEnums'
 import JiraServerClientManager from '../../../../utils/JiraServerClientManager'
+import SendClientSideEvent from '../../../../utils/SendClientSideEvent'
 import ProviderRowContactUs from './ProviderRowContactUs'
 
 interface Props {
@@ -76,7 +76,7 @@ const JiraServerProviderRow = (props: Props) => {
         providerLogo={<JiraServerProviderLogo />}
         contactUsUrl={ExternalLinks.INTEGRATIONS_JIRASERVER}
         onContactUsSubmit={() => {
-          SendClientSegmentEventMutation(atmosphere, 'Clicked Jira Server Request Button')
+          SendClientSideEvent(atmosphere, 'Clicked Jira Server Request Button')
         }}
         hasProvider={!!provider}
       />

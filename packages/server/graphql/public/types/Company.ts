@@ -1,14 +1,14 @@
 import getRethink from '../../../database/rethinkDriver'
 import {RDatum, RValue} from '../../../database/stricterR'
+import AuthToken from '../../../database/types/AuthToken'
 import TeamMember from '../../../database/types/TeamMember'
 import {getUserId} from '../../../utils/authorization'
 import errorFilter from '../../errorFilter'
+import {DataLoaderWorker} from '../../graphql'
 import isValid from '../../isValid'
 import {CompanyResolvers} from '../resolverTypes'
 import getActiveTeamCountByOrgIds from './helpers/getActiveTeamCountByOrgIds'
 import {getTeamsByOrgIds} from './helpers/getTeamsByOrgIds'
-import {DataLoaderWorker} from '../../graphql'
-import AuthToken from '../../../database/types/AuthToken'
 
 export type CompanySource = {id: string}
 
@@ -89,14 +89,17 @@ const Company: CompanyResolvers = {
       .flat()
       .filter(isValid)
     // group by teamId
-    const teamMembersByTeamId = teamMembers.reduce((obj, teamMember) => {
-      if (obj[teamMember.teamId]) {
-        obj[teamMember.teamId]!.push(teamMember)
-      } else {
-        obj[teamMember.teamId] = [teamMember]
-      }
-      return obj
-    }, {} as Record<string, [TeamMember, ...TeamMember[]]>)
+    const teamMembersByTeamId = teamMembers.reduce(
+      (obj, teamMember) => {
+        if (obj[teamMember.teamId]) {
+          obj[teamMember.teamId]!.push(teamMember)
+        } else {
+          obj[teamMember.teamId] = [teamMember]
+        }
+        return obj
+      },
+      {} as Record<string, [TeamMember, ...TeamMember[]]>
+    )
 
     // filter out teams that have less than 2 unremoved team members
     const teamsWithSufficientTeamMembers = Object.values(teamMembersByTeamId)
@@ -139,7 +142,7 @@ const Company: CompanyResolvers = {
     const teams = await getTeamsByOrgIds(orgIds, dataLoader, true)
     const teamIds = teams.map(({id}) => id)
     if (teamIds.length === 0) return 0
-    const filterFn = after ? () => true : (meeting: any) => meeting('createdAt').ge(after)
+    const filterFn = after ? (meeting: any) => meeting('createdAt').ge(after) : () => true
     return r
       .table('NewMeeting')
       .getAll(r.args(teamIds), {index: 'teamId'})

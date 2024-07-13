@@ -1,5 +1,5 @@
-import {PALETTE} from '~/styles/paletteV3'
 import {SlackNotificationEventEnum} from '~/__generated__/SlackNotificationList_viewer.graphql'
+import {PALETTE} from '~/styles/paletteV3'
 import RetrospectiveMeeting from '../../../server/database/types/MeetingRetrospective'
 import RetrospectiveMeetingSettings from '../../../server/database/types/MeetingSettingsRetrospective'
 import ITask from '../../../server/database/types/Task'
@@ -293,17 +293,17 @@ const initDemoOrg = () => {
     id: demoOrgId,
     name: 'Demo Organization',
     tier: 'team',
+    billingTier: 'team',
     orgUserCount: {
       activeUserCount: 5,
       inactiveUserCount: 0
     },
     featureFlags: {
-      SAMLUI: false,
       zoomTranscription: false,
       suggestGroups: false,
       teamsLimit: false,
-      promptToJoinOrg: false,
-      AIGeneratedDiscussionPrompt: false
+      noPromptToJoinOrg: false,
+      publicTeams: false
     },
     showConversionModal: false
   } as const
@@ -326,6 +326,7 @@ const initDemoTeam = (
     teamName: demoTeamName,
     orgId: demoOrgId,
     tier: 'team',
+    billingTier: 'team',
     teamId: demoTeamId,
     organization,
     meetingSettings: initMeetingSettings(),
@@ -482,6 +483,10 @@ export class DemoDiscussion {
   id: string
   thread = new DemoDiscussionThread()
   commentCount = 0
+  team = {
+    id: demoTeamId,
+    organization: initDemoOrg()
+  }
   constructor(reflectionGroupId: string) {
     this.createdAt = new Date().toJSON()
     this.id = `discussion:${reflectionGroupId}`
@@ -502,6 +507,7 @@ const initNewMeeting = (
     __isNewMeeting: 'RetrospectiveMeeting',
     createdAt: now,
     createdBy: demoViewerId,
+    createdByUser: viewerMeetingMember?.user,
     endedAt: null,
     facilitatorStageId: RetroDemo.REFLECT_STAGE_ID,
     facilitatorUserId: demoViewerId,
@@ -561,6 +567,9 @@ const initDB = (botScript: ReturnType<typeof initBotScript>) => {
   const team = initDemoTeam(org, teamMembers, newMeeting)
   teamMembers.forEach((teamMember) => {
     ;(teamMember as any).team = team
+  })
+  users.forEach((user) => {
+    ;(user as any).teams = [team]
   })
   team.meetingSettings.team = team as any
   newMeeting.commentCount = 0

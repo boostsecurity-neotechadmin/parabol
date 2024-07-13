@@ -8,9 +8,8 @@ import {getUserId, isTeamMember} from '../../utils/authorization'
 import publish from '../../utils/publish'
 import standardError from '../../utils/standardError'
 import {GQLContext} from '../graphql'
-import UpdatedTeamInput, {UpdatedTeamInputType} from '../types/UpdatedTeamInput'
 import UpdateTeamNamePayload from '../types/UpdateTeamNamePayload'
-import {makeDefaultTeamName} from 'parabol-client/utils/makeDefaultTeamName'
+import UpdatedTeamInput, {UpdatedTeamInputType} from '../types/UpdatedTeamInput'
 
 export default {
   type: UpdateTeamNamePayload,
@@ -37,7 +36,10 @@ export default {
     }
 
     // VALIDATION
-    const teams = await getTeamsByIds([teamId])
+    const [teams, viewer] = await Promise.all([
+      getTeamsByIds([teamId]),
+      dataLoader.get('users').loadNonNull(viewerId)
+    ])
     const team = teams[0]!
     const oldName = team.name
     const newName = updatedTeam.name
@@ -57,13 +59,7 @@ export default {
       updatedAt: now
     }
     await updateTeamByTeamId(dbUpdate, teamId)
-    analytics.teamNameChanged(
-      viewerId,
-      teamId,
-      oldName,
-      newName,
-      makeDefaultTeamName(teamId) === oldName
-    )
+    analytics.teamNameChanged(viewer, teamId, oldName, newName, oldName.endsWith('’s Team'))
 
     const data = {teamId}
     publish(SubscriptionChannel.TEAM, teamId, 'UpdateTeamNamePayload', data, subOptions)

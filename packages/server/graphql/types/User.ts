@@ -15,17 +15,14 @@ import {
   MAX_RESULT_GROUP_SIZE
 } from '../../../client/utils/constants'
 import groupReflections from '../../../client/utils/smartGroup/groupReflections'
-import getRethink from '../../database/rethinkDriver'
 import MeetingMemberType from '../../database/types/MeetingMember'
-import OrganizationType from '../../database/types/Organization'
 import OrganizationUserType from '../../database/types/OrganizationUser'
-import Reflection from '../../database/types/Reflection'
 import SuggestedActionType from '../../database/types/SuggestedAction'
+import getKysely from '../../postgres/getKysely'
 import {getUserId, isSuperUser, isTeamMember} from '../../utils/authorization'
 import getMonthlyStreak from '../../utils/getMonthlyStreak'
 import getRedis from '../../utils/getRedis'
 import standardError from '../../utils/standardError'
-import errorFilter from '../errorFilter'
 import {DataLoaderWorker, GQLContext} from '../graphql'
 import isValid from '../isValid'
 import invoices from '../queries/invoices'
@@ -34,7 +31,6 @@ import AuthIdentity from './AuthIdentity'
 import Discussion from './Discussion'
 import GraphQLEmailType from './GraphQLEmailType'
 import GraphQLISO8601Type from './GraphQLISO8601Type'
-import GraphQLURLType from './GraphQLURLType'
 import MeetingMember from './MeetingMember'
 import NewFeatureBroadcast from './NewFeatureBroadcast'
 import Organization from './Organization'
@@ -44,12 +40,8 @@ import SuggestedAction from './SuggestedAction'
 import Team from './Team'
 import TeamInvitationPayload from './TeamInvitationPayload'
 import TeamMember from './TeamMember'
-import TierEnum from './TierEnum'
 import {TimelineEventConnection} from './TimelineEvent'
 import TimelineEventTypeEnum from './TimelineEventTypeEnum'
-import TimelineEvent from '../../database/types/TimelineEvent'
-import {RDatum} from '../../database/stricterR'
-import {getAccessibleTeamIdsForUser} from '../getAccessibleTeamIdsForUser'
 
 const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLContext>({
   name: 'User',
@@ -59,9 +51,9 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
       type: new GraphQLNonNull(GraphQLID),
       description: 'The userId provided by us'
     },
-    segmentId: {
+    pseudoId: {
       type: GraphQLString,
-      description: 'The optional segmentId for the user'
+      description: 'The optional pseudoId for the user'
     },
     archivedTasks: require('../queries/archivedTasks').default,
     archivedTasksCount: require('../queries/archivedTasksCount').default,
@@ -91,7 +83,8 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
       resolve: async ({id: userId}: {id: string}, _args: unknown, {dataLoader}: GQLContext) => {
         const organizationUsers = await dataLoader.get('organizationUsersByUserId').load(userId)
         return organizationUsers.some(
-          (organizationUser: OrganizationUserType) => organizationUser.role === 'BILLING_LEADER'
+          (organizationUser: OrganizationUserType) =>
+            organizationUser.role === 'BILLING_LEADER' || organizationUser.role === 'ORG_ADMIN'
         )
       }
     },
@@ -220,7 +213,6 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
         {after, first, teamIds, eventTypes},
         {authToken, dataLoader}: GQLContext
       ) => {
-        const r = await getRethink()
         const viewerId = getUserId(authToken)
 
         // VALIDATE
@@ -240,24 +232,28 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
             edges: []
           }
         }
-        const validTeamIds = await getAccessibleTeamIdsForUser(viewerId, teamIds, dataLoader)
+        const userTeamMembers = await dataLoader.get('teamMembersByUserId').load(viewerId)
+        const accessibleTeamIds = userTeamMembers.map(({teamId}) => teamId)
+        const validTeamIds = teamIds
+          ? teamIds.filter((teamId: string) => accessibleTeamIds.includes(teamId))
+          : accessibleTeamIds
 
         if (viewerId !== id && !isSuperUser(authToken)) return null
-        const dbAfter = after ? new Date(after) : r.maxval
-        const events = await r
-          .table('TimelineEvent')
-          .between([viewerId, r.minval], [viewerId, dbAfter], {
-            index: 'userIdCreatedAt'
-          })
-          .filter({isActive: true})
-          .filter((t: RDatum<TimelineEvent>) =>
-            eventTypes ? r.expr(eventTypes).contains(t('type')) : true
-          )
-          .filter((t: RDatum) => r.expr(validTeamIds).contains(t('teamId')))
-          .orderBy(r.desc('createdAt'))
+        const dbAfter = after ? new Date(after) : new Date('3000-01-01')
+        const minVal = new Date(0)
+
+        const pg = getKysely()
+        const events = await pg
+          .selectFrom('TimelineEvent')
+          .selectAll()
+          .where('userId', '=', viewerId)
+          .where((eb) => eb.between('createdAt', minVal, dbAfter))
+          .where('isActive', '=', true)
+          .where('teamId', 'in', validTeamIds)
+          .$if(!!eventTypes, (db) => db.where('type', 'in', eventTypes))
+          .orderBy('createdAt', 'desc')
           .limit(first + 1)
-          .coerceTo('array')
-          .run()
+          .execute()
         const edges = events.slice(0, first).map((node) => ({
           cursor: node.createdAt,
           node
@@ -309,23 +305,11 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
         return newFeatureId ? dataLoader.get('newFeatures').load(newFeatureId) : null
       }
     },
-    picture: {
-      type: new GraphQLNonNull(GraphQLURLType),
-      description: 'url of user’s profile picture'
-    },
     preferredName: {
       type: new GraphQLNonNull(GraphQLString),
       description: 'The application-specific name, defaults to email before the tld',
       resolve: ({preferredName, name}: {preferredName: string; name: string}) => {
         return preferredName || name
-      }
-    },
-    rasterPicture: {
-      type: new GraphQLNonNull(GraphQLURLType),
-      description:
-        'url of user’s raster profile picture (if user profile pic is an SVG, raster will be a PNG)',
-      resolve: ({picture}: {picture: string}) => {
-        return picture && picture.endsWith('.svg') ? picture.slice(0, -3) + 'png' : picture
       }
     },
     lastSeenAt: {
@@ -419,11 +403,11 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
         {authToken, dataLoader}: GQLContext
       ) {
         const organizationUsers = await dataLoader.get('organizationUsersByUserId').load(userId)
-        const orgIds = organizationUsers.map(({orgId}: OrganizationUserType) => orgId)
+        const orgIds = organizationUsers.map(({orgId}) => orgId)
         const organizations = (await dataLoader.get('organizations').loadMany(orgIds)).filter(
-          errorFilter
+          isValid
         )
-        organizations.sort((a: OrganizationType, b: OrganizationType) => (a.name > b.name ? 1 : -1))
+        organizations.sort((a, b) => (a.name > b.name ? 1 : -1))
         const viewerId = getUserId(authToken)
         if (viewerId === userId || isSuperUser(authToken)) {
           return organizations
@@ -431,10 +415,8 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
         const viewerOrganizationUsers = await dataLoader
           .get('organizationUsersByUserId')
           .load(viewerId)
-        const viewerOrgIds = viewerOrganizationUsers.map(({orgId}: OrganizationUserType) => orgId)
-        return organizations.filter((organization: OrganizationType) =>
-          viewerOrgIds.includes(organization.id)
-        )
+        const viewerOrgIds = viewerOrganizationUsers.map(({orgId}) => orgId)
+        return organizations.filter((organization) => viewerOrgIds.includes(organization.id))
       }
     },
     overLimitCopy: {
@@ -488,7 +470,7 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
         const meetingMemberId = MeetingMemberId.join(meetingId, userId)
         const [viewerMeetingMember, reflections] = await Promise.all([
           dataLoader.get('meetingMembers').load(meetingMemberId),
-          dataLoader.get('retroReflectionsByMeetingId').load(meetingId) as Promise<Reflection[]>
+          dataLoader.get('retroReflectionsByMeetingId').load(meetingId)
         ])
         if (!viewerMeetingMember) {
           return standardError(new Error('Not on team'), {userId})
@@ -499,7 +481,7 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
             plaintextContent.toLowerCase().includes(searchQuery)
           )
           const relatedReflections = matchedReflections.filter(
-            ({reflectionGroupId: groupId}: Reflection) => groupId !== reflectionGroupId
+            ({reflectionGroupId: groupId}) => groupId !== reflectionGroupId
           )
           const relatedGroupIds = [
             ...new Set(relatedReflections.map(({reflectionGroupId}) => reflectionGroupId))
@@ -595,17 +577,28 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
     teams: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(Team))),
       description: 'all the teams the user is on that the viewer can see.',
+      args: {
+        includeArchived: {
+          type: GraphQLBoolean,
+          defaultValue: false,
+          description:
+            'If true, returns archived teams as well; otherwise only return active teams. Default to false.'
+        }
+      },
       resolve: async (
         {id: userId}: {id: string},
-        _args: unknown,
+        {includeArchived},
         {authToken, dataLoader}: GQLContext
       ) => {
         const viewerId = getUserId(authToken)
         const user = (await dataLoader.get('users').load(userId))!
-        const teamIds =
+        const activeTeamIds =
           viewerId === userId || isSuperUser(authToken)
             ? user.tms
             : user.tms.filter((teamId: string) => authToken.tms.includes(teamId))
+        const teamIds = includeArchived
+          ? (await dataLoader.get('teamMembersByUserId').load(userId)).map(({teamId}) => teamId)
+          : activeTeamIds
         const teams = (await dataLoader.get('teams').loadMany(teamIds)).filter(isValid)
         teams.sort((a, b) => (a.name > b.name ? 1 : -1))
         return teams
@@ -634,10 +627,6 @@ const User: GraphQLObjectType<any, GQLContext> = new GraphQLObjectType<any, GQLC
         const teamMemberId = toTeamMemberId(teamId, userId || id)
         return dataLoader.get('teamMembers').load(teamMemberId)
       }
-    },
-    tier: {
-      type: new GraphQLNonNull(TierEnum),
-      description: 'The highest tier of any org the user belongs to'
     },
     tms: {
       type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(GraphQLID))),

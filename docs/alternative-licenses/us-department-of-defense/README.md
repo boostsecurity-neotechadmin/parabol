@@ -1,8 +1,6 @@
 # Parabol Hardened Container for Platform One Iron Bank
 
 [![Slack Status](https://slackin.parabol.co/badge.svg)](https://slackin.parabol.co/)
-[![CircleCI](https://circleci.com/gh/ParabolInc/parabol.svg?style=svg)](https://circleci.com/gh/ParabolInc/parabol)
-[![StackShare](https://img.shields.io/badge/tech-stack-0690fa.svg?style=flat)](https://stackshare.io/parabol-inc/parabol-multiplayer-web-app)
 
 ## Overview
 
@@ -84,7 +82,7 @@ $ yarn && yarn build && yarn start
 - Click "Add New Server" and fill out the forms with your `.env` values
 
   - General.name = POSTGRES_DB
-  - Connection.host = 'postgres' (hardcoded from docker-compose dev.yml, not from .env!)
+  - Connection.host = 'postgres' (hardcoded from docker-compose `docker/stacks/development/docker-compose.yml`, not from .env!)
   - Connection.username = POSTGRES_USER
   - Connection.password = POSTGRES_PASSWORD
   - Connection.maintenanceDatabase = POSTGRES_DB

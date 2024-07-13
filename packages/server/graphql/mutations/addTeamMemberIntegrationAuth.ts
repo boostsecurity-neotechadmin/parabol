@@ -1,15 +1,15 @@
 import {GraphQLID, GraphQLNonNull} from 'graphql'
 import IntegrationProviderId from '~/shared/gqlIds/IntegrationProviderId'
-import GitLabOAuth2Manager from '../../integrations/gitlab/GitLabOAuth2Manager'
 import GcalOAuth2Manager from '../../integrations/gcal/GcalOAuth2Manager'
+import GitLabOAuth2Manager from '../../integrations/gitlab/GitLabOAuth2Manager'
 import JiraServerOAuth1Manager, {
   OAuth1Auth
 } from '../../integrations/jiraServer/JiraServerOAuth1Manager'
 import {IntegrationProviderAzureDevOps} from '../../postgres/queries/getIntegrationProvidersByIds'
 import upsertTeamMemberIntegrationAuth from '../../postgres/queries/upsertTeamMemberIntegrationAuth'
+import AzureDevOpsServerManager from '../../utils/AzureDevOpsServerManager'
 import {analytics} from '../../utils/analytics/analytics'
 import {getUserId, isTeamMember} from '../../utils/authorization'
-import AzureDevOpsServerManager from '../../utils/AzureDevOpsServerManager'
 import standardError from '../../utils/standardError'
 import {GQLContext} from '../graphql'
 import updateRepoIntegrationsCacheByPerms from '../queries/helpers/updateRepoIntegrationsCacheByPerms'
@@ -73,7 +73,10 @@ const addTeamMemberIntegrationAuth = {
     }
 
     const providerDbId = IntegrationProviderId.split(providerId)
-    const integrationProvider = await dataLoader.get('integrationProviders').load(providerDbId)
+    const [integrationProvider, viewer] = await Promise.all([
+      dataLoader.get('integrationProviders').load(providerDbId),
+      dataLoader.get('users').loadNonNull(viewerId)
+    ])
     if (!integrationProvider) {
       return standardError(
         new Error(`Unable to find appropriate integration provider for providerId ${providerId}`),
@@ -176,7 +179,7 @@ const addTeamMemberIntegrationAuth = {
     })
     updateRepoIntegrationsCacheByPerms(dataLoader, viewerId, teamId, true)
 
-    analytics.integrationAdded(viewerId, teamId, service)
+    analytics.integrationAdded(viewer, teamId, service)
 
     const data = {userId: viewerId, teamId, service}
     return data

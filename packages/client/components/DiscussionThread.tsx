@@ -5,9 +5,10 @@ import {PreloadedQuery, usePreloadedQuery} from 'react-relay'
 import useAtmosphere from '~/hooks/useAtmosphere'
 import {useCoverable} from '~/hooks/useControlBarCovers'
 import {Breakpoint, DiscussionThreadEnum, MeetingControlBarEnum} from '~/types/constEnums'
+import {DiscussionThreadQuery} from '../__generated__/DiscussionThreadQuery.graphql'
+import {RetroDiscussPhase_meeting$data} from '../__generated__/RetroDiscussPhase_meeting.graphql'
 import {Elevation} from '../styles/elevation'
 import makeMinWidthMediaQuery from '../utils/makeMinWidthMediaQuery'
-import {DiscussionThreadQuery} from '../__generated__/DiscussionThreadQuery.graphql'
 import DiscussionThreadInput from './DiscussionThreadInput'
 import DiscussionThreadList, {DiscussionThreadables} from './DiscussionThreadList'
 import {isLocalPoll} from './Poll/local/newPoll'
@@ -35,7 +36,7 @@ interface Props {
   queryRef: PreloadedQuery<DiscussionThreadQuery>
   header?: ReactNode
   emptyState?: ReactNode
-  transcription?: string | null
+  transcription?: RetroDiscussPhase_meeting$data['transcription']
   showTranscription?: boolean
 }
 

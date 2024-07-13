@@ -191,12 +191,6 @@ const backupOrganization: MutationResolvers['backupOrganization'] = async (_sour
     newMeeting: (r.table('NewMeeting').getAll(r.args(teamIds), {index: 'teamId'}) as any)
       .coerceTo('array')
       .do((items: RValue) => r.db(DESTINATION).table('NewMeeting').insert(items)),
-    organization: (r.table('Organization').getAll(r.args(orgIds)) as any)
-      .coerceTo('array')
-      .do((items: RValue) => r.db(DESTINATION).table('Organization').insert(items)),
-    organizationUser: (r.table('OrganizationUser').getAll(r.args(orgIds), {index: 'orgId'}) as any)
-      .coerceTo('array')
-      .do((items: RValue) => r.db(DESTINATION).table('OrganizationUser').insert(items)),
     reflectPrompt: (r.table('ReflectPrompt').getAll(r.args(teamIds), {index: 'teamId'}) as any)
       .coerceTo('array')
       .do((items: RValue) => r.db(DESTINATION).table('ReflectPrompt').insert(items)),
@@ -256,28 +250,7 @@ const backupOrganization: MutationResolvers['backupOrganization'] = async (_sour
               r.or(row('teamId').default(null).eq(null), r(teamIds).contains(row('teamId')))
             )
             .coerceTo('array')
-            .do((items: RValue) => r.db(DESTINATION).table('SuggestedAction').insert(items)),
-          timelineEvent: (
-            r
-              .table('TimelineEvent')
-              .filter((row: RDatum) => r(userIds).contains(row('userId'))) as any
-          )
-            .filter((row: RValue) =>
-              r.branch(row('teamId'), r(teamIds).contains(row('teamId')), true)
-            )
-            .coerceTo('array')
-            .do((items: RValue) => r.db(DESTINATION).table('TimelineEvent').insert(items))
-        })
-      }),
-    activeDomains: r
-      .table('Organization')
-      .getAll(r.args(orgIds))('activeDomain')
-      .coerceTo('array')
-      .do((domains: RValue) => {
-        return r({
-          SAML: (r.table('SAML').getAll(r.args(domains), {index: 'domains'}) as any)
-            .coerceTo('array')
-            .do((items: RValue) => r.db(DESTINATION).table('SAML').insert(items))
+            .do((items: RValue) => r.db(DESTINATION).table('SuggestedAction').insert(items))
         })
       }),
     meetingIds: r
@@ -286,28 +259,6 @@ const backupOrganization: MutationResolvers['backupOrganization'] = async (_sour
       .coerceTo('array')
       .do((meetingIds: RValue) => {
         return r({
-          retroReflection: (
-            r.table('RetroReflection').getAll(r.args(meetingIds), {index: 'meetingId'}) as any
-          )
-            .coerceTo('array')
-            .do((items: RValue) => r.db(DESTINATION).table('RetroReflection').insert(items)),
-          retroReflectionGroup: (
-            r.table('RetroReflectionGroup').getAll(r.args(meetingIds), {index: 'meetingId'}) as any
-          )
-            .coerceTo('array')
-            .do((items: RValue) => r.db(DESTINATION).table('RetroReflectionGroup').insert(items)),
-          // really hard things to clone
-          reflectionGroupComments: r
-            .table('RetroReflectionGroup')
-            .getAll(r.args(meetingIds), {index: 'meetingId'})('id')
-            .coerceTo('array')
-            .do((discussionIds: RValue) => {
-              return (
-                r.table('Comment').getAll(r.args(discussionIds), {index: 'discussionId'}) as any
-              )
-                .coerceTo('array')
-                .do((items: RValue) => r.db(DESTINATION).table('Comment').insert(items))
-            }),
           agendaItemComments: r
             .table('AgendaItem')
             .getAll(r.args(meetingIds), {index: 'meetingId'})('id')
@@ -322,17 +273,6 @@ const backupOrganization: MutationResolvers['backupOrganization'] = async (_sour
         })
       })
   }).run()
-
-  // remove teamIds that are not part of the desired orgIds
-  await r
-    .db('orgBackup')
-    .table('User')
-    .update((row: RValue) => ({
-      tms: row('tms')
-        .innerJoin(r(teamIds), (a: RValue, b: RValue) => a.eq(b))
-        .zip()
-    }))
-    .run()
 
   return `Success! 'orgBackup' contains all the records for ${orgIds.join(', ')}`
 }

@@ -1,7 +1,8 @@
-import {TeamHealthStageResolvers} from '../resolverTypes'
-import {getUserId} from '../../../utils/authorization'
 import TeamHealthStageDB from '../../../database/types/TeamHealthStage'
+import {Logger} from '../../../utils/Logger'
+import {getUserId} from '../../../utils/authorization'
 import isValid from '../../isValid'
+import {TeamHealthStageResolvers} from '../resolverTypes'
 
 export type TeamHealthStageSource = TeamHealthStageDB & {
   meetingId: string
@@ -21,7 +22,7 @@ const TeamHealthStage: TeamHealthStageResolvers = {
   },
   readyCount: async ({meetingId, readyToAdvance}, _args, {dataLoader}, ref) => {
     if (!readyToAdvance) return 0
-    if (!meetingId) console.log('no meetingid', ref)
+    if (!meetingId) Logger.log('no meetingid', ref)
     const meeting = await dataLoader.get('newMeetings').load(meetingId)
     const {facilitatorUserId} = meeting
     return readyToAdvance.filter((userId) => userId !== facilitatorUserId).length

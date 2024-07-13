@@ -4,9 +4,9 @@ import makeAgendaItemSchema from 'parabol-client/validation/makeAgendaItemSchema
 import getRethink from '../../database/rethinkDriver'
 import AgendaItem, {AgendaItemInput} from '../../database/types/AgendaItem'
 import generateUID from '../../generateUID'
+import {analytics} from '../../utils/analytics/analytics'
 import {getUserId, isTeamMember} from '../../utils/authorization'
 import publish from '../../utils/publish'
-import segmentIo from '../../utils/segmentIo'
 import standardError from '../../utils/standardError'
 import AddAgendaItemPayload from '../types/AddAgendaItemPayload'
 import CreateAgendaItemInput, {CreateAgendaItemInputType} from '../types/CreateAgendaItemInput'
@@ -36,6 +36,7 @@ export default {
     if (!isTeamMember(authToken, teamId)) {
       return standardError(new Error('Team not found'), {userId: viewerId})
     }
+    const viewer = await dataLoader.get('users').loadNonNull(viewerId)
     // VALIDATION
     const schema = makeAgendaItemSchema()
     const {errors, data: validNewAgendaItem} = schema(newAgendaItem)
@@ -57,14 +58,7 @@ export default {
       .run()
 
     const meetingId = await addAgendaItemToActiveActionMeeting(agendaItemId, teamId, dataLoader)
-    segmentIo.track({
-      userId: viewerId,
-      event: 'Added Agenda Item',
-      properties: {
-        teamId,
-        meetingId
-      }
-    })
+    analytics.addedAgendaItem(viewer, teamId, meetingId)
     const data = {agendaItemId, meetingId}
     publish(SubscriptionChannel.TEAM, teamId, 'AddAgendaItemPayload', data, subOptions)
     return data

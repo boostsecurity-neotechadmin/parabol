@@ -36,14 +36,13 @@ const createTeamPromptMentionNotifications = async (
     return []
   }
 
-  const notificationsToAdd = addedMentions.map(
-    (mention) =>
-      new NotificationResponseMentioned({
-        userId: mention,
-        responseId: newResponse.id,
-        meetingId: newResponse.meetingId
-      })
-  )
+  const notificationsToAdd = addedMentions.map((mention) => {
+    return new NotificationResponseMentioned({
+      userId: mention,
+      responseId: newResponse.id,
+      meetingId: newResponse.meetingId
+    })
+  })
 
   const r = await getRethink()
   await r.table('Notification').insert(notificationsToAdd).run()

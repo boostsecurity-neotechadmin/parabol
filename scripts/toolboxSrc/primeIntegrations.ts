@@ -8,7 +8,7 @@ const upsertGlobalIntegrationProvidersFromEnv = async () => {
       authStrategy: 'oauth2',
       scope: 'global',
       teamId: 'aGhostTeam',
-      serverBaseUrl: 'https://gitlab.com',
+      serverBaseUrl: process.env.GITLAB_SERVER_URL,
       clientId: process.env.GITLAB_CLIENT_ID,
       clientSecret: process.env.GITLAB_CLIENT_SECRET
     },
@@ -29,12 +29,12 @@ const upsertGlobalIntegrationProvidersFromEnv = async () => {
       scope: 'global',
       teamId: 'aGhostTeam',
       serverBaseUrl: 'https://www.googleapis.com/calendar/v3',
-      clientId: process.env.GCAL_CLIENT_ID,
-      clientSecret: process.env.GCAL_CLIENT_SECRET
+      clientId: process.env.GOOGLE_OAUTH_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_OAUTH_CLIENT_SECRET
     }
   ] as const
 
-  const validProviders = providers.filter(({clientId, clientSecret}) => clientId && clientSecret)
+  const validProviders = providers.filter(({clientId, clientSecret, serverBaseUrl}) => clientId && clientSecret && serverBaseUrl)
   await Promise.all(
     validProviders.map((provider) => {
       return upsertIntegrationProvider(provider)

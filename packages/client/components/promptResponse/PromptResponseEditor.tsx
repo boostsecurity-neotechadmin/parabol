@@ -11,8 +11,8 @@ import EditorLinkChangerTipTap from '../EditorLinkChanger/EditorLinkChangerTipTa
 import EditorLinkViewerTipTap from '../EditorLinkViewer/EditorLinkViewerTipTap'
 import EmojiMenuTipTap from './EmojiMenuTipTap'
 import MentionsTipTap from './MentionsTipTap'
-import {createEditorExtensions, getLinkProps, LinkMenuProps, LinkPreviewProps} from './tiptapConfig'
 import {unfurlLoomLinks} from './loomExtension'
+import {LinkMenuProps, LinkPreviewProps, createEditorExtensions, getLinkProps} from './tiptapConfig'
 
 const LinkIcon = styled(Link)({
   height: 18,
@@ -68,7 +68,7 @@ const CancelButton = styled(SubmitButton)({
 const StyledEditor = styled('div')`
   .ProseMirror {
     min-height: 40px;
-    line-height: 20px;
+    line-height: 1.25;
   }
 
   .ProseMirror :is(ul, ol) {

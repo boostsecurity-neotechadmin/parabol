@@ -1,138 +1,153 @@
 import {Close} from '@mui/icons-material'
 import graphql from 'babel-plugin-relay/macro'
-import React, {useState} from 'react'
-import {PreloadedQuery, useFragment, usePreloadedQuery} from 'react-relay'
-import {
-  TaskStatusEnum,
-  TeamPromptWorkDrawerQuery
-} from '../../__generated__/TeamPromptWorkDrawerQuery.graphql'
+import React, {useEffect, useState} from 'react'
+import {useFragment} from 'react-relay'
 import {TeamPromptWorkDrawer_meeting$key} from '../../__generated__/TeamPromptWorkDrawer_meeting.graphql'
-import NullableTask from '../NullableTask/NullableTask'
-import {TaskStatus} from '../../types/constEnums'
-import clsx from 'clsx'
-import {meetingColumnArray} from '../../utils/constants'
-import {taskStatusLabels} from '../../utils/taskStatus'
-import halloweenRetrospectiveTemplate from '../../../../static/images/illustrations/halloweenRetrospectiveTemplate.png'
-import AddTaskButton from '../AddTaskButton'
-import CreateTaskMutation from '../../mutations/CreateTaskMutation'
 import useAtmosphere from '../../hooks/useAtmosphere'
-import dndNoise from '../../utils/dndNoise'
+import gcalLogo from '../../styles/theme/images/graphics/google-calendar.svg'
+import AtlassianClientManager from '../../utils/AtlassianClientManager'
+import GitHubClientManager from '../../utils/GitHubClientManager'
+import SendClientSideEvent from '../../utils/SendClientSideEvent'
+import GitHubSVG from '../GitHubSVG'
+import JiraSVG from '../JiraSVG'
+import JiraServerSVG from '../JiraServerSVG'
+import ParabolLogoSVG from '../ParabolLogoSVG'
+import Tab from '../Tab/Tab'
+import Tabs from '../Tabs/Tabs'
+import GCalIntegrationPanel from './WorkDrawer/GCalIntegrationPanel'
+import GitHubIntegrationPanel from './WorkDrawer/GitHubIntegrationPanel'
+import JiraIntegrationPanel from './WorkDrawer/JiraIntegrationPanel'
+import JiraServerIntegrationPanel from './WorkDrawer/JiraServerIntegrationPanel'
+import ParabolTasksPanel from './WorkDrawer/ParabolTasksPanel'
 
 interface Props {
-  queryRef: PreloadedQuery<TeamPromptWorkDrawerQuery>
   meetingRef: TeamPromptWorkDrawer_meeting$key
   onToggleDrawer: () => void
 }
 
 const TeamPromptWorkDrawer = (props: Props) => {
-  const {queryRef, meetingRef, onToggleDrawer} = props
-  const data = usePreloadedQuery<TeamPromptWorkDrawerQuery>(
+  const {meetingRef, onToggleDrawer} = props
+  const meeting = useFragment(
     graphql`
-      query TeamPromptWorkDrawerQuery($after: DateTime, $userIds: [ID!]) {
-        viewer {
-          id
-          tasks(first: 1000, after: $after, userIds: $userIds)
-            @connection(key: "UserColumnsContainer_tasks", filters: ["userIds"]) {
-            edges {
-              node {
-                ...NullableTask_task
-                id
-                status
+      fragment TeamPromptWorkDrawer_meeting on TeamPromptMeeting {
+        id
+        teamId
+        ...ParabolTasksPanel_meeting
+        ...GitHubIntegrationPanel_meeting
+        ...JiraIntegrationPanel_meeting
+        ...GCalIntegrationPanel_meeting
+        ...JiraServerIntegrationPanel_meeting
+        viewerMeetingMember {
+          teamMember {
+            teamId
+            integrations {
+              jiraServer {
+                sharedProviders {
+                  id
+                }
+              }
+              gcal {
+                cloudProvider {
+                  id
+                }
               }
             }
           }
         }
       }
     `,
-    queryRef
-  )
-  const {viewer} = data
-  const {tasks, id: viewerId} = viewer
-
-  const meeting = useFragment(
-    graphql`
-      fragment TeamPromptWorkDrawer_meeting on TeamPromptMeeting {
-        id
-        teamId
-      }
-    `,
     meetingRef
   )
-  const {id: meetingId, teamId} = meeting
-
   const atmosphere = useAtmosphere()
-  const [selectedStatus, setSelectedStatus] = useState<TaskStatusEnum>(TaskStatus.DONE)
-  const selectedTasks = tasks.edges
-    .map((edge) => edge.node)
-    .filter((task) => task.status === selectedStatus)
+  const hasJiraServer =
+    !!meeting.viewerMeetingMember?.teamMember?.integrations.jiraServer?.sharedProviders?.length
+  const hasGCal = !!meeting.viewerMeetingMember?.teamMember?.integrations.gcal?.cloudProvider?.id
 
-  const handleAddTask = () => {
-    CreateTaskMutation(
-      atmosphere,
-      {
-        newTask: {
-          status: selectedStatus,
-          meetingId,
-          teamId,
-          userId: viewerId,
-          sortOrder: dndNoise()
-        }
-      },
-      {}
-    )
-  }
+  useEffect(() => {
+    SendClientSideEvent(atmosphere, 'Your Work Drawer Impression', {
+      teamId: meeting.teamId,
+      meetingId: meeting.id
+    })
+  }, [])
+
+  const [activeIdx, setActiveIdx] = useState(0)
+
+  const baseTabs = [
+    {
+      icon: <ParabolLogoSVG />,
+      service: 'PARABOL',
+      label: 'Parabol',
+      Component: ParabolTasksPanel
+    },
+    ...(hasJiraServer
+      ? [
+          {
+            icon: <JiraServerSVG />,
+            service: 'jiraServer',
+            label: 'Jira Server',
+            Component: JiraServerIntegrationPanel
+          }
+        ]
+      : []),
+    ...(GitHubClientManager.isAvailable
+      ? [
+          {
+            icon: <GitHubSVG />,
+            service: 'github',
+            label: 'GitHub',
+            Component: GitHubIntegrationPanel
+          }
+        ]
+      : []),
+    ...(AtlassianClientManager.isAvailable
+      ? [{icon: <JiraSVG />, service: 'jira', label: 'Jira', Component: JiraIntegrationPanel}]
+      : []),
+    ...(hasGCal
+      ? [
+          {
+            icon: <img className='h-6 w-6' src={gcalLogo} />,
+            service: 'gcal',
+            label: 'Google Calendar',
+            Component: GCalIntegrationPanel
+          }
+        ]
+      : [])
+  ] as const
+
+  const {Component} = baseTabs[activeIdx]!
 
   return (
     <>
-      <div className='px-4 pt-4'>
-        <div className='flex justify-between'>
-          <div className='text-base font-semibold'>Your Tasks</div>
-          <div className='cursor-pointer text-slate-600 hover:opacity-50' onClick={onToggleDrawer}>
-            <Close />
-          </div>
-        </div>
-        <div className='my-4 flex gap-2'>
-          {meetingColumnArray.map((status) => (
+      <div className='pt-4'>
+        <div className='border-b border-solid border-slate-300'>
+          <div className='flex justify-between px-4'>
+            <div className='text-base font-semibold'>Your Work</div>
             <div
-              key={status}
-              className={clsx(
-                'flex-shrink-0 cursor-pointer rounded-full py-2 px-4 text-sm leading-3 text-slate-800',
-                status === selectedStatus
-                  ? 'bg-grape-700 font-semibold text-white focus:text-white'
-                  : 'border border-slate-300 bg-white'
-              )}
-              onClick={() => setSelectedStatus(status)}
+              className='cursor-pointer text-slate-600 hover:opacity-50'
+              onClick={onToggleDrawer}
             >
-              {taskStatusLabels[status]}
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className='flex h-full flex-col items-center gap-y-2 overflow-auto px-4 pt-1 pb-4'>
-        {selectedTasks.length > 0 ? (
-          selectedTasks.map((task) => (
-            <NullableTask
-              className='w-full rounded border border-solid border-slate-100'
-              key={task.id}
-              dataCy='foo'
-              area={'userDash'}
-              task={task}
-            />
-          ))
-        ) : (
-          <div className='-mt-14 flex h-full flex-col items-center justify-center'>
-            <img className='w-20' src={halloweenRetrospectiveTemplate} />
-            <div className='mt-7'>
-              You don’t have any <b>{taskStatusLabels[selectedStatus]}</b> tasks.
-              <br />
-              Try adding new tasks below.
+              <Close />
             </div>
           </div>
-        )}
+          <Tabs activeIdx={activeIdx}>
+            {baseTabs.map((tab, idx) => (
+              <Tab
+                key={tab.label}
+                onClick={() => {
+                  SendClientSideEvent(atmosphere, 'Your Work Integration Clicked', {
+                    teamId: meeting.teamId,
+                    meetingId: meeting.id,
+                    service: baseTabs[idx]?.service
+                  })
+                  setActiveIdx(idx)
+                }}
+                label={<div className='flex items-center justify-center'>{tab.icon}</div>}
+              />
+            ))}
+          </Tabs>
+        </div>
       </div>
-      <div className='flex items-center justify-center border-t border-solid border-slate-200 p-2'>
-        <AddTaskButton dataCy={`your-work-task`} onClick={handleAddTask} />
-      </div>
+      <Component meetingRef={meeting} />
     </>
   )
 }

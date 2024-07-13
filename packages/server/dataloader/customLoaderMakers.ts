@@ -1,5 +1,6 @@
 import DataLoader from 'dataloader'
-import {Selectable, sql} from 'kysely'
+import tracer from 'dd-trace'
+import {Selectable, SqlBool, sql} from 'kysely'
 import {PARABOL_AI_USER_ID} from '../../client/utils/constants'
 import getRethink, {RethinkSchema} from '../database/rethinkDriver'
 import {RDatum} from '../database/stricterR'
@@ -8,11 +9,13 @@ import MeetingTemplate from '../database/types/MeetingTemplate'
 import OrganizationUser from '../database/types/OrganizationUser'
 import {Reactable, ReactableEnum} from '../database/types/Reactable'
 import Task, {TaskStatusEnum} from '../database/types/Task'
+import getFileStoreManager from '../fileStorage/getFileStoreManager'
+import isValid from '../graphql/isValid'
+import {SAMLSource} from '../graphql/public/types/SAML'
+import {TeamSource} from '../graphql/public/types/Team'
 import getKysely from '../postgres/getKysely'
 import {TeamMeetingTemplate} from '../postgres/pg.d'
 import {IGetLatestTaskEstimatesQueryResult} from '../postgres/queries/generated/getLatestTaskEstimatesQuery'
-import getApprovedOrganizationDomainsByDomainFromPG from '../postgres/queries/getApprovedOrganizationDomainsByDomainFromPG'
-import getApprovedOrganizationDomainsFromPG from '../postgres/queries/getApprovedOrganizationDomainsFromPG'
 import getGitHubAuthByUserIdTeamId, {
   GitHubAuth
 } from '../postgres/queries/getGitHubAuthByUserIdTeamId'
@@ -27,9 +30,14 @@ import getMeetingTaskEstimates, {
   MeetingTaskEstimatesResult
 } from '../postgres/queries/getMeetingTaskEstimates'
 import {AnyMeeting, MeetingTypeEnum} from '../postgres/types/Meeting'
+import {Logger} from '../utils/Logger'
 import getRedis from '../utils/getRedis'
+import isUserVerified from '../utils/isUserVerified'
+import NullableDataLoader from './NullableDataLoader'
 import RootDataLoader from './RootDataLoader'
+import normalizeArrayResults from './normalizeArrayResults'
 import normalizeResults from './normalizeResults'
+import {selectTeams} from './primaryKeyLoaderMakers'
 
 export interface MeetingSettingsKey {
   teamId: string
@@ -310,7 +318,7 @@ export const meetingSettingsByType = (parent: RootDataLoader) => {
       keys.forEach((key) => {
         const {meetingType} = key
         types[meetingType] = types[meetingType] || []
-        types[meetingType].push(key.teamId)
+        types[meetingType]!.push(key.teamId)
       })
       const entries = Object.entries(types) as [MeetingTypeEnum, string[]][]
       const resultsByType = await Promise.all(
@@ -343,7 +351,13 @@ export const meetingSettingsByType = (parent: RootDataLoader) => {
 export const organizationApprovedDomainsByOrgId = (parent: RootDataLoader) => {
   return new DataLoader<string, string[], string>(
     async (orgIds) => {
-      const currentApprovals = await getApprovedOrganizationDomainsFromPG(orgIds)
+      const pg = getKysely()
+      const currentApprovals = await pg
+        .selectFrom('OrganizationApprovedDomain')
+        .selectAll()
+        .where('orgId', 'in', orgIds)
+        .where('removedAt', 'is', null)
+        .execute()
       return orgIds.map((orgId) => {
         return currentApprovals
           .filter((approval) => approval.orgId === orgId)
@@ -359,7 +373,13 @@ export const organizationApprovedDomainsByOrgId = (parent: RootDataLoader) => {
 export const organizationApprovedDomains = (parent: RootDataLoader) => {
   return new DataLoader<string, boolean, string>(
     async (domains) => {
-      const currentApprovals = await getApprovedOrganizationDomainsByDomainFromPG(domains)
+      const pg = getKysely()
+      const currentApprovals = await pg
+        .selectFrom('OrganizationApprovedDomain')
+        .selectAll()
+        .where('domain', 'in', domains)
+        .where('removedAt', 'is', null)
+        .execute()
       return domains.map((domain) => {
         return !!currentApprovals.find((approval) => approval.domain === domain)
       })
@@ -402,7 +422,7 @@ export const meetingTemplatesByType = (parent: RootDataLoader) => {
       keys.forEach((key) => {
         const {meetingType} = key
         types[meetingType] = types[meetingType] || []
-        types[meetingType].push(key.teamId)
+        types[meetingType]!.push(key.teamId)
       })
       const entries = Object.entries(types) as [MeetingTypeEnum, string[]][]
       const resultsByType = await Promise.all(
@@ -462,11 +482,11 @@ export const meetingTemplatesByOrgId = (parent: RootDataLoader) => {
         .selectAll()
         .where('orgId', 'in', orgIds)
         .where('isActive', '=', true)
-        .where(({or, cmpr}) =>
+        .where(({or, eb}) =>
           or([
-            cmpr('hideStartingAt', 'is', null),
-            sql`make_date(2020 , extract(month from current_date)::integer, extract(day from current_date)::integer) between "hideEndingAt" and "hideStartingAt"`,
-            sql`make_date(2019 , extract(month from current_date)::integer, extract(day from current_date)::integer) between "hideEndingAt" and "hideStartingAt"`
+            eb('hideStartingAt', 'is', null),
+            sql<SqlBool>`DATE '2020-01-01' + EXTRACT(DOY FROM CURRENT_DATE)::INTEGER - 1 between "hideEndingAt" and "hideStartingAt"`,
+            sql<SqlBool>`DATE '2019-01-01' + EXTRACT(DOY FROM CURRENT_DATE)::INTEGER - 1 between "hideEndingAt" and "hideStartingAt"`
           ])
         )
         .orderBy('createdAt', 'desc')
@@ -595,18 +615,38 @@ export const activeMeetingsByMeetingSeriesId = (parent: RootDataLoader) => {
   return new DataLoader<number, AnyMeeting[], string>(
     async (keys) => {
       const r = await getRethink()
-      const res = await Promise.all(
-        keys.map((key) => {
-          return r
-            .table('NewMeeting')
-            .getAll(key, {index: 'meetingSeriesId'})
-            .filter({endedAt: null}, {default: true})
-            .orderBy(r.asc('createdAt'))
-            .run()
-        })
-      )
-      return res
+      const res = await r
+        .table('NewMeeting')
+        .getAll(r.args(keys), {index: 'meetingSeriesId'})
+        .filter({endedAt: null}, {default: true})
+        .orderBy(r.asc('createdAt'))
+        .run()
+      return normalizeArrayResults(keys, res, 'meetingSeriesId')
     },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+export const lastMeetingByMeetingSeriesId = (parent: RootDataLoader) => {
+  return new DataLoader<number, AnyMeeting | null, string>(
+    async (keys) =>
+      tracer.trace('lastMeetingByMeetingSeriesId', async () => {
+        const r = await getRethink()
+        const res = await (
+          r
+            .table('NewMeeting')
+            .getAll(r.args(keys), {index: 'meetingSeriesId'})
+            .group('meetingSeriesId') as RDatum
+        )
+          .orderBy(r.desc('createdAt'))
+          .nth(0)
+          .default(null)
+          .ungroup()('reduction')
+          .run()
+        return normalizeResults(keys, res as AnyMeeting[], 'meetingSeriesId')
+      }),
     {
       ...parent.dataLoaderOptions
     }
@@ -622,7 +662,8 @@ export const billingLeadersIdsByOrgId = (parent: RootDataLoader) => {
           return r
             .table('OrganizationUser')
             .getAll(orgId, {index: 'orgId'})
-            .filter({removedAt: null, role: 'BILLING_LEADER'})
+            .filter({removedAt: null})
+            .filter((row: RDatum) => r.expr(['BILLING_LEADER', 'ORG_ADMIN']).contains(row('role')))
             .coerceTo('array')('userId')
             .run()
         })
@@ -631,6 +672,213 @@ export const billingLeadersIdsByOrgId = (parent: RootDataLoader) => {
     },
     {
       ...parent.dataLoaderOptions
+    }
+  )
+}
+
+export const saml = (parent: RootDataLoader) => {
+  return new NullableDataLoader<string, SAMLSource | null, string>(
+    async (samlIds) => {
+      const pg = getKysely()
+      const res = await pg
+        .selectFrom('SAMLDomain')
+        .innerJoin('SAML', 'SAML.id', 'SAMLDomain.samlId')
+        .where('SAML.id', 'in', samlIds)
+        .groupBy('SAML.id')
+        .selectAll('SAML')
+        .select(({fn}) => [fn.agg<string[]>('array_agg', ['SAMLDomain.domain']).as('domains')])
+        .execute()
+      return samlIds.map((samlId) => res.find((row) => row.id === samlId))
+    },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+export const samlByDomain = (parent: RootDataLoader) => {
+  return new NullableDataLoader<string, SAMLSource | null, string>(
+    async (domains) => {
+      const pg = getKysely()
+      const res = await pg
+        .selectFrom('SAMLDomain')
+        .innerJoin('SAML', 'SAML.id', 'SAMLDomain.samlId')
+        .where('SAMLDomain.domain', 'in', domains)
+        .groupBy('SAML.id')
+        .selectAll('SAML')
+        .select(({fn}) => [fn.agg<string[]>('array_agg', ['SAMLDomain.domain']).as('domains')])
+        .execute()
+      return domains.map((domain) => res.find((row) => row.domains.includes(domain)))
+    },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+export const samlByOrgId = (parent: RootDataLoader) => {
+  return new NullableDataLoader<string, SAMLSource | null, string>(
+    async (orgIds) => {
+      const pg = getKysely()
+      const res = await pg
+        .selectFrom('SAMLDomain')
+        .innerJoin('SAML', 'SAML.id', 'SAMLDomain.samlId')
+        .where('SAML.orgId', 'in', orgIds)
+        .groupBy('SAML.id')
+        .selectAll('SAML')
+        .select(({fn}) => [fn.agg<string[]>('array_agg', ['SAMLDomain.domain']).as('domains')])
+        .execute()
+      return orgIds.map((orgId) => res.find((row) => row.orgId === orgId))
+    },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+// Check if the org has a founder or billing lead with a verified email and their email domain is the same as the org domain
+export const isOrgVerified = (parent: RootDataLoader) => {
+  return new DataLoader<string, boolean, string>(
+    async (orgIds) => {
+      const orgUsersRes = await parent.get('organizationUsersByOrgId').loadMany(orgIds)
+      const orgUsersWithRole = orgUsersRes
+        .filter(isValid)
+        .flat()
+        .filter(({role}) => role && ['BILLING_LEADER', 'ORG_ADMIN'].includes(role))
+      const orgUsersUserIds = orgUsersWithRole.map((orgUser) => orgUser.userId)
+      const usersRes = await parent.get('users').loadMany(orgUsersUserIds)
+      const verifiedUsers = usersRes.filter(isValid).filter(isUserVerified)
+      const verifiedOrgUsers = orgUsersWithRole.filter((orgUser) =>
+        verifiedUsers.some((user) => user.id === orgUser.userId)
+      )
+      return await Promise.all(
+        orgIds.map(async (orgId) => {
+          const isUserVerified = verifiedOrgUsers.some((orgUser) => orgUser.orgId === orgId)
+          if (isUserVerified) return true
+          const isOrgSAML = await parent.get('samlByOrgId').load(orgId)
+          return !!isOrgSAML
+        })
+      )
+    },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+export const autoJoinTeamsByOrgId = (parent: RootDataLoader) => {
+  return new DataLoader<string, TeamSource[], string>(
+    async (orgIds) => {
+      const verificationResults = await parent.get('isOrgVerified').loadMany(orgIds)
+      const verifiedOrgIds = orgIds.filter((_, index) => verificationResults[index])
+
+      const teams =
+        verifiedOrgIds.length === 0
+          ? []
+          : await selectTeams()
+              .where('orgId', 'in', verifiedOrgIds)
+              .where('autoJoin', '=', true)
+              .where('isArchived', '!=', true)
+              .selectAll()
+              .execute()
+
+      return orgIds.map((orgId) => teams.filter((team) => team.orgId === orgId))
+    },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+/**
+ * Assuming the input is a domain, is it also a company domain?
+ */
+export const isCompanyDomain = (parent: RootDataLoader) => {
+  return new DataLoader<string, boolean, string>(
+    async (domains) => {
+      const pg = getKysely()
+      const res = await pg
+        .selectFrom('FreemailDomain')
+        .where('domain', 'in', domains)
+        .select('domain')
+        .execute()
+      const freemailDomains = new Set(res.map(({domain}) => domain))
+      return domains.map((domain) => !freemailDomains.has(domain))
+    },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+export const favoriteTemplateIds = (parent: RootDataLoader) => {
+  return new DataLoader<string, string[], string>(
+    async (userIds) => {
+      const pg = getKysely()
+      const users = await pg
+        .selectFrom('User')
+        .select(['id', 'favoriteTemplateIds'])
+        .where('id', 'in', userIds)
+        .execute()
+
+      const userIdToFavoriteTemplateIds = new Map(
+        users.map((user) => [user.id, user.favoriteTemplateIds])
+      )
+      return userIds.map((userId) => userIdToFavoriteTemplateIds.get(userId) || [])
+    },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+export const fileStoreAsset = (parent: RootDataLoader) => {
+  return new DataLoader<string, string, string>(
+    async (urls) => {
+      // Our cloud saas has a public file store, so no need to make a presigned url
+      if (process.env.IS_ENTERPRISE !== 'true') return urls
+      const manager = getFileStoreManager()
+      const {baseUrl} = manager
+      const presignedUrls = await Promise.all(
+        urls.map(async (url) => {
+          // if the image is not hosted by us, ignore it
+          if (!url.startsWith(baseUrl)) return url
+          try {
+            return await manager.presignUrl(url)
+          } catch (e) {
+            Logger.log('Unable to presign url', url, e)
+            return url
+          }
+        })
+      )
+      return presignedUrls
+    },
+    {
+      ...parent.dataLoaderOptions
+    }
+  )
+}
+
+export const meetingCount = (parent: RootDataLoader) => {
+  return new DataLoader<{teamId: string; meetingType: MeetingTypeEnum}, number, string>(
+    async (keys) => {
+      const r = await getRethink()
+      const res = await Promise.all(
+        keys.map(async ({teamId, meetingType}) => {
+          return r
+            .table('NewMeeting')
+            .getAll(teamId, {index: 'teamId'})
+            .filter({meetingType: meetingType as any})
+            .count()
+            .default(0)
+            .run()
+        })
+      )
+      return res
+    },
+    {
+      ...parent.dataLoaderOptions,
+      cacheKeyFn: (key) => `${key.teamId}:${key.meetingType}`
     }
   )
 }

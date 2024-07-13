@@ -2,6 +2,7 @@ import {GraphQLID, GraphQLNonNull} from 'graphql'
 import {SubscriptionChannel} from 'parabol-client/types/constEnums'
 import getRethink from '../../database/rethinkDriver'
 import MeetingTemplate from '../../database/types/MeetingTemplate'
+import {Logger} from '../../utils/Logger'
 import {getUserId, isTeamMember} from '../../utils/authorization'
 import publish from '../../utils/publish'
 import standardError from '../../utils/standardError'
@@ -30,16 +31,16 @@ const selectTemplate = {
     const viewerId = getUserId(authToken)
 
     // AUTH
-    const template = (await dataLoader
-      .get('meetingTemplates')
-      .load(selectedTemplateId)) as MeetingTemplate
+    const [template] = await Promise.all([
+      dataLoader.get('meetingTemplates').load(selectedTemplateId) as Promise<MeetingTemplate>
+    ])
 
     if (!template || !template.isActive) {
-      console.log('no template', selectedTemplateId, template)
+      Logger.log('no template', selectedTemplateId, template)
       return standardError(new Error('Template not found'), {userId: viewerId})
     }
 
-    const {scope, isFree} = template
+    const {scope} = template
     const viewerTeam = await dataLoader.get('teams').loadNonNull(teamId)
     if (scope === 'TEAM') {
       if (!isTeamMember(authToken, template.teamId))
@@ -48,12 +49,6 @@ const selectTemplate = {
       const templateTeam = await dataLoader.get('teams').loadNonNull(template.teamId)
       if (viewerTeam.orgId !== templateTeam.orgId) {
         return standardError(new Error('Template is scoped to organization'), {userId: viewerId})
-      }
-    } else if (scope === 'PUBLIC') {
-      if (!isFree && viewerTeam.tier === 'starter') {
-        return standardError(new Error('User does not have access to this premium template'), {
-          userId: viewerId
-        })
       }
     }
 
